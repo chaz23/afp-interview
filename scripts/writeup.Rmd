@@ -6,11 +6,21 @@ output:
     toc: yes
     toc_depth: 4
 toc-title: "Contents"
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 ```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+load("C:/Users/chari/Documents/afp-data/clean_data.Rda")
+```
+
 
 ----
 
@@ -20,13 +30,13 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 
 First of all, please allow me to lay the boundaries and scope of this task and write-up. I understand that the purpose of this task is simply to gain some insight into my thought process, methodology and personality, and not to build the best segmentation model. 
 
-Here I will take on a narrative style in this write-up and guide you through my thought process as I explore the data. There are many paths that one could go down when trying to answer the questions presented. I will simply pick one of those after doing some exploratory data analysis and see where that leads. In real life, this would be an iterative process of exploration and evaluation, as the questions we have originally asked will evolve based on our findings. I will not be updating the questions, nor iterating on my modelling outcomes regardless of model accuracy. Given the motivation of this task as well as the limited time available, I think this is a fair task boundary.
+Here I will take on a narrative style in this write-up and guide you through my thought process as I explore the data. There are many paths that one could go down when trying to answer the questions presented. I will simply pick one of those after doing some exploratory data analysis and see where that leads. In real life, this would be an iterative process of exploration and evaluation, as the questions we have originally asked will evolve based on our findings. I will not be updating the questions, nor iterating on my modelling outcomes regardless of model accuracy. Given the motivation of this task as well as the limited time available, this seems like a sensible approach.
 
-Anyway, I hope you find this enjoyable at the very least! Perhaps you'll even learn something new!! `r emo::ji("sparkles")`
+Anyway, I hope you find this enjoyable at the very least! Who knows, perhaps you'll even learn something new!! `r emo::ji("sparkles")`
 
 ### Computation
 
-All computation is performed in R using R version 4.1.2. You can access all my code via Github here. Throughout this document I will add links to scripts that I wrote for each section if relevant.
+All computation is performed in R using R version 4.1.2. You can access all my code via Github [here](https://github.com/chaz23/afp-interview). Throughout this document I will add links to scripts that I wrote for each section if relevant.
 
 Reproducibility is an important part of good data science, so I have used the **renv** package to produce as reproducible an environment as possible. However, as I have kept all input and output data on my local machine in the interests of confidentiality (i.e not storing it in a Github public repository), this will affect reproducibility in this instance.
 
@@ -60,35 +70,59 @@ These are some interesting questions, so let's dive into the data to see what we
 
 ## Data preparation
 
+Before working with the data directly, I take some time to check its level of cleanliness and internal consistency. After all, garbage in equals garbage out. I won't include all the details, but I made some assumptions along the way:
+
+* 7,592 out of the 32,188 supporters in the Transactions table had a `total_gifts` value (sum of all gifts across time in the Contacts table) lower than the sum of their individual transactions. Since this is about a quarter of the dataset, I chose to ignore this fact, although in reality with access to the complete dataset I would have investigated this further as it is a huge indication that the two datasets are not internally consistent.
+
+```{r}
+contacts %>% 
+  left_join((transactions %>% 
+               group_by(supporter_id) %>% 
+               summarise(amount = sum(amount))), 
+            by = "supporter_id") %>% 
+  filter(total_gifts < amount) %>% 
+  select(supporter_id, total_gifts_from_contacts = total_gifts, total_amount_from_transactions = amount)
+```
+
+* Given that I was told that the datasets were compiled at the same time, I took "this year" to mean the calendar year 2017.
+
+For this project, given the scope that I'm working within, I'm going to create a "master" dataset by merging what I feel are the relevant parts of Transactions and Non-Financial Actions into Contacts. 
+
+Some steps I took to clean the data are as follows:
+
+* Renamed columns according to "snake case" convention.
+* Joined an [external postcodes dataset](https://gist.github.com/randomecho/5020859) to:
+  * Get supporter mailing location (at the postcode level) in latitude and longitude.
+  * Fill in missing values for the `state` column where the postcode was known. Note that this may yield slight inaccuracies in edge cases where multiple states share the same postcode.
+* Cleaned the `state` column for consistency - eg: change N.S.W to NSW etc.
+* Removed deceased supporters as they might confuse our model if we decide to use one later on to predict giving.
+* Joined the Contacts and Transactions tables together to indicate what campaigns a supporter had participated in before. Having the campaigns in this format means that I can possibly tokenize this data later if I want to feed it to a machine learning model.
+
+```{r}
+contacts %>% 
+  select(supporter_id, previous_campaigns) %>% 
+  na.omit()
+```
+
+* Added a `has_done_nonfin_action` column to Contacts to indicate if a supporter has previously participated in any non-financial actions. Given the unbalanced classes and low number of distinct items in Non-Financial Actions I'm not going to spend too much time with it. Additionally, I'm going to make the assumption that anyone not in this table has never participated in a non-financial action.
+
+* Added average gift amounts for each of the time periods presented. (Eg: `avg_gift_amount_last_year`).
+
+----
+
+## Data exploration
+
+After I've cleaned the data to an acceptable level, I like to have a look at the characteristics of each variable to get a sense of data.
+
+Here I've split the variables by data type (character and numeric).
+
+```{r}
+contacts %>% skimr::skim() %>% skimr::partition()
+```
 
 
 
 
-
-
-
-
-
-#### <a name="questions">What questions would we like answered?</a>
-
-
-
-
-
-
-
-In this write-up, I'm going to walk you through 
-
-* How these individuals might be segmented and why?
-  * Data consists of demographic, behavioural and attitudinal variables.
-  * **Conversation around what the variables mean**
-  * Can perhaps be segmented around a "likeliness to give" metric.
-* How would the donation ask in their next communication be calculated and why?
-* What might you send to the groups you identify and what might you not send to them and why?
-* How would you improve on these things in the future?
-
-What are we hoping to achieve? 
-- Larger donations and/or higher frequency of donations.
 
 
 Validation:
