@@ -11,12 +11,13 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, out.width = "90%", fig.align = "center")
 ```
 
 ```{r}
 library(dplyr)
 library(ggplot2)
+library(scales)
 
 load("C:/Users/chari/Documents/afp-data/clean_data.Rda")
 ```
@@ -90,7 +91,7 @@ For this project, given the scope that I'm working within, I'm going to create a
 
 Some steps I took to clean the data are as follows:
 
-* Renamed columns according to "snake case" convention.
+* Renamed columns according to the [R style guide](https://style.tidyverse.org/syntax.html#syntax).
 * Joined an [external postcodes dataset](https://gist.github.com/randomecho/5020859) to:
   * Get supporter mailing location (at the postcode level) in latitude and longitude.
   * Fill in missing values for the `state` column where the postcode was known. Note that this may yield slight inaccuracies in edge cases where multiple states share the same postcode.
@@ -104,7 +105,7 @@ contacts %>%
   na.omit()
 ```
 
-* Added a `has_done_nonfin_action` column to Contacts to indicate if a supporter has previously participated in any non-financial actions. Given the unbalanced classes and low number of distinct items in Non-Financial Actions I'm not going to spend too much time with it. Additionally, I'm going to make the assumption that anyone not in this table has never participated in a non-financial action.
+* Added a `nonfin_action` column to Contacts to indicate if a supporter has previously participated in any non-financial actions. Given the unbalanced classes and low number of distinct items in Non-Financial Actions I'm not going to spend too much time with it. Additionally, I'm going to make the assumption that anyone not in this table has never participated in a non-financial action.
 
 * Added average gift amounts for each of the time periods presented. (Eg: `avg_gift_amount_last_year`).
 
@@ -112,12 +113,79 @@ contacts %>%
 
 ## Data exploration
 
-After I've cleaned the data to an acceptable level, I like to have a look at the characteristics of each variable to get a sense of data.
+After I've cleaned the data to an acceptable level, I like to have a look at the characteristics of each variable. Notice how we're moving from the *validation* stage to the *description* stage. Descriptions give us objective interpretations that we can all agree on.
 
-Here I've split the variables by data type (character and numeric).
+Here I've split the variables by data type (character and numeric). What I'm usually interested in seeing is the completion rate, which tells me the fraction of missing values, the number of unique entries in the character variables and the histograms of the numeric variables.
+
+The histograms of the gift numbers and totals seem to indicate a log-normal distribution which we'll check later. Understandably, many people give small amounts, while a handful donate massively. There's a mix of demographic variables (gender, religion, age, location), attitudinal (communication preference) and behavioural (number of gifts given and average gift amount).
 
 ```{r}
 contacts %>% skimr::skim() %>% skimr::partition()
+```
+
+This is where I begin to build some plots to start getting a feel for the data. I'll show you a handful of the ones I found interesting.
+
+```{r}
+contacts %>% 
+  filter(!is.na(age)) %>% 
+  mutate(age_bin = 5 * (age %/% 5),
+         age_bin = factor(age_bin)) %>%
+  ggplot(aes(age_bin, avg_gift_amount, fill = gender)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 250)) +
+  labs(title = "Males appear to donate larger amounts and have a wider spread than females",
+       subtitle = "Note that this graph only shows supporters whose ages are known.",
+       x = "Age",
+       y = "Average donation amount",
+       fill = "Gender") +
+  theme(legend.position = "top")
+```
+
+To dig a bit further into this, I took `age`, log-transformed `avg_gift amount` and `num_gifts_last_365_days` and then did a pairwise correlation between them all. The values below are the correlation coefficients. The value 0.56 suggests that there is a moderately strong relationship between age and gift amount. 
+
+```{r}
+contacts %>% 
+  select(age, avg_gift_amount, num_gifts_last_365_days) %>% 
+  mutate(avg_gift_amount = log10(avg_gift_amount + 0.1),
+         num_gifts_last_365_days = log10(num_gifts_last_365_days + 0.1)) %>% 
+  filter(!is.na(age)) %>% 
+  corrr::correlate() %>% 
+  corrr::fashion()
+```
+
+```{r}
+contacts %>% 
+  ggplot(aes(age, fill = gender)) +
+  geom_histogram(binwidth = 2, color = "grey", position = "fill") +
+  labs(title = "More females donate across all age groups than males",
+       subtitle = paste0("Do younger donors not like to disclose their gender?", emo::ji("thinking")),
+       x = "Age",
+       y = "Proportion of supporters",
+       fill = "Gender") +
+  scale_y_continuous(labels = percent) +
+  theme(legend.position = "top")
+
+contacts %>% 
+  ggplot(aes(age, fill = religion)) +
+  geom_histogram(binwidth = 2, color = "grey") +
+  labs(title = "Most older donors identify as Christian",
+       subtitle = paste0("Do younger donors not like to disclose their religion?", emo::ji("thinking")),
+       x = "Age",
+       y = "Number of supporters",
+       fill = "Religion") +
+  theme(legend.position = "top")
+
+contacts %>% 
+  filter(!is.na(state)) %>% 
+  filter(country == "Australia") %>%
+  count(state) %>%
+  mutate(state = fct_reorder(state, n)) %>% 
+  ggplot(aes(state, n)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Most donors in AUS come from VIC and NSW as expected",
+       x = "State",
+       y = "Number of supporters")
 ```
 
 
@@ -125,19 +193,14 @@ contacts %>% skimr::skim() %>% skimr::partition()
 
 
 
-Validation:
-* Is the data self-consistent?
-  * **This** year will be taken to mean 2017.
-  * Data items where `total_gifts` is less than the value of that individuals transactions will be omitted.
-* Are there outliers in the data and what do they mean?
-* How should we handle missing data?
-  * `state` and `country` when omitted will be imputed accurately when possible.
-
-Description
-Evaluation
 
 
 
-Improvement:
 
-* Reach out to older Christians? 
+
+
+
+
+
+
+
