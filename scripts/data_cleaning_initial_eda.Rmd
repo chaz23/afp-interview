@@ -1,0 +1,297 @@
+---
+title: "Personal Notes for Data Cleaning and Initial Exploration"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+# Load packages and raw data.
+
+library(dplyr)
+library(janitor)
+library(lubridate)
+library(stringr)
+library(skimr)
+library(ggplot2)
+
+load("./data/raw_data.Rda")
+load("./data/postcodes.Rda")
+```
+
+What does the contacts dataset look like?
+
+```{r}
+contacts_raw %>% 
+  clean_names() %>% 
+  str()
+```
+
+* Let's do some column renaming and move on.
+* Come back to this chunk and keep adding to it later.
+
+```{r}
+postcode_join <- postcode_data %>% 
+  select(postcode, state_y = state) %>% 
+  distinct(postcode, state_y) %>% 
+  group_by(postcode) %>% 
+  slice_head(n = 1) %>% 
+  ungroup()
+
+contacts <- contacts_raw %>% 
+  clean_names() %>% 
+  rename(state = mailing_state_province,
+         postcode = mailing_zip_postal_code,
+         country = mailing_country,
+         comms_preference = af_p_communication_preference_encoded,
+         num_gifts_last_365_days = number_of_gifts_last_365_days,
+         num_gifts_this_year = number_of_gifts_this_year,
+         num_gifts_last_year = number_of_gifts_last_year,
+         num_gifts_two_years_ago = number_of_gifts_two_years_ago) %>% 
+  mutate(avg_gift_amount = if_else(total_number_of_gifts > 0, total_gifts / total_number_of_gifts, 0),
+         avg_gift_amount_last_365_days = if_else(num_gifts_last_365_days > 0, total_gifts_last_365_days / num_gifts_last_365_days, 0),
+         avg_gift_amount_this_year = if_else(num_gifts_this_year > 0, total_gifts_this_year / num_gifts_this_year, 0),
+         avg_gift_amount_last_year = if_else(num_gifts_last_year > 0, total_gifts_last_year / num_gifts_last_year, 0),
+         avg_gift_amount_two_years_ago = if_else(num_gifts_two_years_ago > 0, total_gifts_two_years_ago / num_gifts_two_years_ago, 0)) %>% 
+  mutate(country = str_to_title(country)) %>% 
+  left_join(postcode_join, by = "postcode") %>% 
+  mutate(state = case_when(country == "Australia" & is.na(state) ~ state_y,
+                           TRUE ~ state)) %>% 
+  select(-state_y) %>% 
+  mutate(country = case_when(is.na(country) & grepl("(NSW|QLD|WA|ACT|NT)", state) ~ "Australia",
+                             TRUE ~ country)) %>% 
+  mutate(state = case_when(state == "N.S.W." ~ "NSW",
+                           state == "MAN" ~ "MANAWATU-WANGANUI",
+                           state == "WAI" ~ "WAIKATO",
+                           state == "CAN" ~ "CANTERBURY",
+                           state == "VICTORIA" & country == "Australia" ~ "VIC",
+                           state == "QUEENSLAND" ~ "QLD",
+                           state == "OTA" ~ "OTAGO",
+                           state == "CA" ~ "CALIFORNIA",
+                           state == "BOP" ~ "BAY OF PLENTY",
+                           state == "AKL" ~ "AUCKLAND",
+                           state == "WEL" ~ "WELLINGTON",
+                           TRUE ~ state))
+
+```
+
+```{r}
+contacts %>% 
+  count(bequest_status, sort = TRUE)
+```
+
+
+What are the characteristics of the data?
+
+```{r}
+contacts %>% skim()
+```
+
+* Number of gifts appears to be the number of times each person donated, while total gifts appears to be the total monetary value.
+* Mix of character and numeric columns.
+* Supporters are unique (no duplicates).
+* Aside from age, numeric variables have no missing values.
+* All gift-related columns appear to have outlying values where a handful of people donated extremely large amounts.
+* Total gifts and number of gifts are not limited to this year and the last 2 years.
+* Additional columns for ML:
+  * Avg gift amount/number over whole history vs. last 2 years.
+* Remove deceased.
+* Can probably lump NAs with Unknown for religion.
+
+
+To-do:
+* Specifying the outcome of the donation could have an impact on giving? Could possibly do some A/B testing to verify?
+
+```{r}
+contacts %>% 
+  count(state, sort = TRUE) %>% 
+  print(n = Inf)
+```
+
+* State field needs to be cleaned up. (Eg: Bay of Plenty appears to be the same as BOP etc.)
+
+```{r}
+contacts %>% 
+  filter(is.na(state) & !is.na(postcode)) %>% 
+  count(country, sort = TRUE)
+```
+
+* Although state appears to be missing in 9767 instances, 5386 of those seem to come from observations in AUS where the postcode is known, so we can possibly fill those up accurately.
+
+```{r}
+contacts %>% 
+  ggplot(aes(age, fill = gender)) +
+  geom_histogram(binwidth = 2, color = "grey")
+
+contacts %>% 
+  ggplot(aes(age, fill = religion)) +
+  geom_histogram(binwidth = 2, color = "grey")
+
+contacts %>% 
+  mutate(total_gifts = 5 * (total_gifts %/% 5)) %>% 
+  ggplot(aes(total_gifts)) +
+  geom_histogram(color = "grey")
+
+contacts %>% 
+  ggplot(aes(gender)) +
+  geom_bar(stat = "count")
+```
+
+* Seems like age is a strong predictor of giving.
+
+```{r}
+contacts %>% 
+  filter(total_number_of_gifts > 20)
+
+contacts %>% 
+  ggplot(aes(total_number_of_gifts)) 
+```
+
+```{r}
+# Clean state and postcode data.
+contacts
+```
+
+
+```{r}
+contacts %>%
+  ggplot(aes(age, total_gifts, color = religion)) +
+  geom_point(alpha = 0.2, position = "jitter") +
+  coord_cartesian(ylim = c(0,10000))
+```
+
+* Being older and christian seems to be correlated with giving.
+
+```{r}
+contacts %>% 
+  filter(!is.na(postcode)) %>% 
+  left_join(postcode_data, by = "postcode") %>% 
+  select(state.x, postcode, state.y, country) %>% 
+  filter(!is.na(state.y)) %>% 
+  filter(country != "Australia") %>%
+  distinct(country)
+
+contacts %>% distinct(postcode)
+```
+
+
+
+
+
+```{r}
+transactions <- transactions_raw %>% 
+  clean_names() %>% 
+  mutate(date = ymd(date))
+```
+
+```{r}
+transactions %>%
+  ggplot(aes(date)) +
+  geom_histogram(binwidth = 10)
+
+transactions %>% 
+  count(source, sort = TRUE)
+
+contacts %>% 
+  filter(total_number_of_gifts > 0)
+
+contacts %>% 
+  filter(total_number_of_gifts == 0) %>% 
+  inner_join(transactions, by = "supporter_id") %>% 
+  group_by(supporter_id) %>% 
+  slice_max(date) %>% 
+  arrange(desc(date))
+```
+
+* Can create separate features for type of campaign given to.
+* Histogram of number of times individuals have given.
+* Correlation between do not mail reason and amount given.
+* Amounts given by source/source_2.
+
+Some questions:
+
+total gifts appears to be across all time. why are there transactions recorded for individuals who have 0 total gifts? Eg: 682306, 692862
+does transactions contain the full subset of transactions for the given individuals who are in the dataset for that time period?
+
+```{r}
+nonfin_actions <- nonfin_actions_raw %>% 
+  clean_names() %>% 
+  rename(action_name = non_financial_action_non_financial_action_name,
+         record_type = non_financial_action_record_type)
+```
+
+```{r}
+nonfin_actions %>% skim()
+
+nonfin_actions %>% 
+  count(action_type, action_name, sort = T) %>% print(n = 55)
+
+nonfin_actions %>% 
+  count(response_channel, sort = TRUE)
+```
+
+
+See which supporters had `total_gifts` < sum of their transactions.
+
+```{r}
+transactions_summarised <- transactions %>% 
+  group_by(supporter_id) %>% 
+  summarise(amount = sum(amount))
+
+contacts %>% 
+  left_join(transactions_summarised, by = "supporter_id") %>% 
+  filter(total_gifts < amount)
+  
+```
+
+We would have to throw away 7724 rows of data so we'll assume that there is some reason for the discrepancy and move on.
+
+```{r}
+# Add an identifier for deceased.
+
+deceased <- transactions %>% 
+  filter(do_not_mail_reason == "Deceased") %>% 
+  # select(supporter_id, deceased = do_not_mail_reason) %>% 
+  # mutate(deceased = if_else(!is.na(deceased), TRUE, FALSE)) %>% 
+  distinct(supporter_id, .keep_all = TRUE)
+
+contacts %>% 
+  anti_join(deceased, by = "supporter_id")
+```
+
+
+----
+
+Ok, now to see if we can augment the transactions dataset.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

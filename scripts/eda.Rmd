@@ -1,0 +1,173 @@
+---
+title: "EDA"
+author: "Charith Wijewardena"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+library(dplyr)
+library(forcats)
+library(ggplot2)
+library(tidytext)
+library(stringr)
+
+load("./data/clean_data.Rda")
+```
+
+* How these individuals might be segmented and why?
+  * Data consists of demographic, behavioural and attitudinal variables.
+  * **Conversation around what the variables mean and **
+* How would the donation ask in their next communication be calculated and why?
+* What might you send to the groups you identify and what might you not send to them and why?
+* How would you improve on these things in the future?
+
+----
+
+### Demographic characteristics of the supporter base.
+
+```{r}
+contacts %>% 
+  ggplot(aes(age, fill = gender)) +
+  geom_histogram(binwidth = 2, color = "grey")
+
+contacts %>% 
+  ggplot(aes(age, fill = religion)) +
+  geom_histogram(binwidth = 2, color = "grey")
+```
+
+In total, there appear to be more female than male supporters although this could be false as the gender of a third of the supporter base is unknown. However, when it comes to age, it seems that for cases where the age is known, there are more female supporters at almost every age group. Similarly, there seems to be a trend that Christians dominate the older age brackets.
+
+```{r}
+contacts %>% 
+  filter(!is.na(state)) %>% 
+  filter(country == "Australia") %>%
+  count(state) %>% 
+  mutate(state = fct_reorder(state, n)) %>% 
+  ggplot(aes(state, n)) +
+  geom_col() +
+  coord_flip()
+```
+
+The majority of supporter are from NSW and VIC which is not surprising.
+
+```{r}
+
+```
+
+
+
+
+
+Let's see how the demographic variables compare against giving.
+
+```{r}
+contacts %>% 
+  filter(!is.na(age)) %>% 
+  mutate(age_bin = 5 * (age %/% 5),
+         age_bin = factor(age_bin)) %>%
+  ggplot(aes(age_bin, avg_gift_amount)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 250))
+```
+
+Avg gift amount seems to increase with age.
+
+```{r}
+contacts %>% 
+  filter(!is.na(age)) %>% 
+  mutate(age_bin = 5 * (age %/% 5),
+         age_bin = factor(age_bin)) %>%
+  ggplot(aes(age_bin, avg_gift_amount, fill = gender)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 250))
+```
+
+At almost every age group, the median average gift amount is higher for males.
+
+```{r}
+contacts %>% 
+  ggplot(aes(total_gifts + 1, fill = gender)) +
+  geom_histogram(color = "grey") +
+  scale_x_log10()
+
+contacts %>% 
+  ggplot(aes(total_gifts + 1, fill = gender)) +
+  geom_histogram(color = "grey", position = "fill") +
+  scale_x_log10()
+```
+
+There seems to be a huge spike associated with people who haven't given. The distribution of total gifts given who have given appears to be approximately log-normal (slightly left skewed). However at the upper end of the spectrum it appears to be dominated by males. It appears at the lower end of the spectrum (perhaps small-scale one-off givers) there seems to be a lack of demographic information, which seems to manifest across the other demographic variables too.
+
+```{r}
+contacts %>% 
+  filter(!is.na(state)) %>% 
+  filter(country == "Australia") %>%
+  ggplot(aes(total_gifts + 1, fill = state)) +
+  geom_histogram(color = "grey", position = "fill") +
+  scale_x_log10()
+```
+
+Interesting that the proportion of supporters from ACT seems to increase towards higher givers.
+
+```{r}
+campaign_list <- tibble(
+  campaign = c("RG", "SG", "CB", "IND", "HV", "REF", "CF", "RC", "CH", "GIFT", "MAG", "NEWS"),
+  desc = c("Regular Giving", "Single Giving", "Christmas Bowl", "Individual", "High Value", "Refugees", "Community Fundraising", "Ration Challenge", "Church", "Gifts for Peace", "Supporter Magazine", "Newsletter")
+)
+
+transactions_summarised <- transactions %>%
+  mutate(source = str_replace_all(source, "-", " "),
+         source = str_replace_all(source, "[0-9]", " ")) %>% 
+  unnest_tokens(campaign, source, to_lower = FALSE) %>% 
+  left_join(campaign_list, by = "campaign") %>% 
+  mutate(campaign = if_else(!is.na(desc), paste0(campaign, " (", desc, ")"), campaign)) %>% 
+  group_by(campaign) %>% 
+  summarise(n = n(),
+            min_amount = min(amount),
+            max_amount = max(amount),
+            median_amount = median(amount),
+            avg_amount = mean(amount)) %>% 
+  arrange(desc(n))
+```
+
+```{r}
+transactions_summarised %>%
+  mutate(campaign = fct_reorder(campaign, n)) %>% 
+  head(20) %>% 
+  ggplot(aes(n, campaign)) +
+  geom_col()
+```
+
+Regular givers, Christmas bowl, newsletters and individual givers make up the bulk of the transactions. 
+
+```{r}
+transactions_summarised %>%
+  mutate(campaign = fct_reorder(campaign, median_amount)) %>% 
+  head(20) %>% 
+  ggplot(aes(median_amount, campaign)) +
+  geom_col()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,109 @@
+---
+title: "Act for Peace Interview: Data Analysis and Write-up"
+author: "Charith Wijewardena"
+output: 
+  html_document: 
+    toc: yes
+    toc_depth: 4
+toc-title: "Contents"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+----
+
+## Introduction
+
+### Scope of the analysis
+
+First of all, please allow me to lay the boundaries and scope of this task and write-up. I understand that the purpose of this task is simply to gain some insight into my thought process, methodology and personality, and not to build the best segmentation model. 
+
+Here I will take on a narrative style in this write-up and guide you through my thought process as I explore the data. There are many paths that one could go down when trying to answer the questions presented. I will simply pick one of those after doing some exploratory data analysis and see where that leads. In real life, this would be an iterative process of exploration and evaluation, as the questions we have originally asked will evolve based on our findings. I will not be updating the questions, nor iterating on my modelling outcomes regardless of model accuracy. Given the motivation of this task as well as the limited time available, I think this is a fair task boundary.
+
+Anyway, I hope you find this enjoyable at the very least! Perhaps you'll even learn something new!! `r emo::ji("sparkles")`
+
+### Computation
+
+All computation is performed in R using R version 4.1.2. You can access all my code via Github here. Throughout this document I will add links to scripts that I wrote for each section if relevant.
+
+Reproducibility is an important part of good data science, so I have used the **renv** package to produce as reproducible an environment as possible. However, as I have kept all input and output data on my local machine in the interests of confidentiality (i.e not storing it in a Github public repository), this will affect reproducibility in this instance.
+
+### Approach
+
+While data science is partly art and partly science, I like to approach data analysis tasks in as principled and methodical a manner as I can. Usually, this involves 3 steps:
+
+* **Validation:** 
+
+Exploring and evaluating the cleanliness and self-consistency of the data. Handling missing data, making sure that data points match up with each other, understanding the meaning behind each variable, understanding the nature of outlying values 
+
+* **Description:**
+
+Exploratory data analysis. Slicing the data
+
+* Evaluation
+
+
+### Motivation
+
+Analysis without a motivation is often aimless, so I'm glad that you have provided some questions to keep us on track!
+
+* How these individuals might be segmented and why?
+* How would the donation ask in their next communication be calculated and why?
+* What might you send to the groups you identify and what might you not send to them and why?
+* How would you improve on these things in the future?
+
+These are some interesting questions, so let's dive into the data to see what we find!
+
+----
+
+## Data preparation
+
+
+
+
+
+
+
+
+
+
+#### <a name="questions">What questions would we like answered?</a>
+
+
+
+
+
+
+
+In this write-up, I'm going to walk you through 
+
+* How these individuals might be segmented and why?
+  * Data consists of demographic, behavioural and attitudinal variables.
+  * **Conversation around what the variables mean**
+  * Can perhaps be segmented around a "likeliness to give" metric.
+* How would the donation ask in their next communication be calculated and why?
+* What might you send to the groups you identify and what might you not send to them and why?
+* How would you improve on these things in the future?
+
+What are we hoping to achieve? 
+- Larger donations and/or higher frequency of donations.
+
+
+Validation:
+* Is the data self-consistent?
+  * **This** year will be taken to mean 2017.
+  * Data items where `total_gifts` is less than the value of that individuals transactions will be omitted.
+* Are there outliers in the data and what do they mean?
+* How should we handle missing data?
+  * `state` and `country` when omitted will be imputed accurately when possible.
+
+Description
+Evaluation
+
+
+
+Improvement:
+
+* Reach out to older Christians? 
