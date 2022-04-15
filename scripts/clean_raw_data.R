@@ -4,6 +4,8 @@ library(dplyr)
 library(lubridate)
 library(stringr)
 library(janitor)
+library(tidytext)
+library(tidyr)
 
 load("C:/Users/chari/Documents/afp-data/raw_data.Rda")
 load("./data/postcodes.Rda")
@@ -14,7 +16,14 @@ transactions <- transactions_raw %>%
   mutate(date = ymd(date)) %>% 
   mutate(source = str_replace_all(source, "/", ""))
 
-# Clean the contacts dataset. ----
+# Clean the non-financial actions dataset. ----
+
+nonfin_actions <- nonfin_actions_raw %>% 
+  clean_names() %>% 
+  rename(action_name = non_financial_action_non_financial_action_name,
+         record_type = non_financial_action_record_type)
+
+# Prepare a "master" dataset from the contacts dataset. ----
 
 # Prepare the postcodes dataset for a join with contacts.
 postcode_join <- postcode_data %>% 
@@ -31,6 +40,16 @@ postcode_join <- postcode_data %>%
 deceased <- transactions %>% 
   filter(do_not_mail_reason == "Deceased") %>% 
   distinct(supporter_id, .keep_all = TRUE)
+
+# Prepare a list of previous campaigns per supporter.
+prev_campaigns <- transactions %>%
+  mutate(source = str_replace_all(source, "-", " "),
+         source = str_replace_all(source, "[0-9]", " ")) %>% 
+  unnest_tokens(campaign, source, to_lower = FALSE) %>% 
+  distinct(supporter_id, campaign) %>% 
+  mutate(value = campaign) %>% 
+  pivot_wider(names_from = campaign, values_from = value) %>% 
+  unite("previous_campaigns", AFP:last_col(), sep = "|", na.rm = TRUE)
 
 contacts <- contacts_raw %>% 
   clean_names() %>% 
@@ -79,13 +98,25 @@ contacts <- contacts_raw %>%
   mutate(religion = if_else(is.na(religion), "Unknown", religion)) %>% 
   
   # Remove deceased supporters.
-  anti_join(deceased, by = "supporter_id")
+  anti_join(deceased, by = "supporter_id") %>% 
+  
+  # Add previous campaigns.
+  left_join(prev_campaigns, by = "supporter_id") %>% 
+  
+  # Indicate whether the supporter has participated in non-financial actions previously.
+  left_join((nonfin_actions %>% 
+               mutate(nonfin_action = "Participated") %>% 
+               select(supporter_id, nonfin_action)),
+            by = "supporter_id") %>% 
+  replace_na(list(nonfin_action = "Not Participated"))
 
-# Clean the non-financial actions dataset. ----
+# Map the campaign codes to normal descriptions. ----
 
-nonfin_actions <- nonfin_actions_raw %>% 
-  clean_names() %>% 
-  rename(action_name = non_financial_action_non_financial_action_name,
-         record_type = non_financial_action_record_type)
+campaign_list <- tibble(
+  campaign = c("RG", "SG", "CB", "IND", "HV", "REF", "CF", "RC", "CH", "GIFT", "MAG", "NEWS"),
+  desc = c("Regular Giving", "Single Giving", "Christmas Bowl", "Individual", "High Value", "Refugees", "Community Fundraising", "Ration Challenge", "Church", "Gifts for Peace", "Supporter Magazine", "Newsletter")
+)
 
-save(contacts, transactions, nonfin_actions, file = "C:/Users/chari/Documents/afp-data/clean_data.Rda")
+# Save data to disk.
+
+save(contacts, transactions, nonfin_actions, campaign_list, file = "C:/Users/chari/Documents/afp-data/clean_data.Rda")
