@@ -5,7 +5,7 @@ library(lubridate)
 library(stringr)
 library(janitor)
 
-load("./data/raw_data.Rda")
+load("C:/Users/chari/Documents/afp-data/raw_data.Rda")
 load("./data/postcodes.Rda")
 
 # Clean the transactions dataset. ----
@@ -88,4 +88,4 @@ nonfin_actions <- nonfin_actions_raw %>%
   rename(action_name = non_financial_action_non_financial_action_name,
          record_type = non_financial_action_record_type)
 
-save(contacts, transactions, nonfin_actions, file = "./data/clean_data.Rda")
+save(contacts, transactions, nonfin_actions, file = "C:/Users/chari/Documents/afp-data/clean_data.Rda")

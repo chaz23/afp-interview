@@ -2,7 +2,7 @@
 
 library(readxl)
 
-file_path <- "./data/ActForPeaceInterviewDataset.xlsx"
+file_path <- "C:/Users/chari/Documents/afp-data/ActForPeaceInterviewDataset.xlsx"
 
 col_types <- list(
   contacts = c("text", "numeric", rep("text", 7), rep("numeric", 10)),
@@ -14,4 +14,4 @@ contacts_raw <- read_excel(path = file_path, sheet = "Contacts", col_types = col
 transactions_raw <- read_excel(path = file_path, sheet = "Transactions", col_types = col_types$transactions)
 nonfin_actions_raw <- read_excel(path = file_path, sheet = "Non-Financial-Actions", col_types = col_types$nonfin_actions)
 
-save(contacts_raw, transactions_raw, nonfin_actions_raw, file = "./data/raw_data.Rda")
+save(contacts_raw, transactions_raw, nonfin_actions_raw, file = "C:/Users/chari/Documents/afp-data/raw_data.Rda")
