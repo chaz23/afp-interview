@@ -16,12 +16,40 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, out.width 
 
 ```{r}
 library(dplyr)
+library(forcats)
 library(ggplot2)
 library(scales)
+library(showtext)
 
 load("C:/Users/chari/Documents/afp-data/clean_data.Rda")
 ```
 
+```{r cache=TRUE}
+font_add_google("Open Sans", family = "Open Sans Semibold", regular.wt = 600)
+font_add_google("IBM Plex Sans")
+font_add_google("IBM Plex Mono")
+```
+
+```{r}
+showtext_auto()
+
+ret <- theme_minimal() +
+      theme(
+        plot.title = element_text(family = "Open Sans Semibold", size = 20),
+        plot.subtitle = element_text(family = "IBM Plex Sans", size = 18),
+        plot.caption = element_text(family = "IBM Plex Mono", size = 16, colour = "grey50", hjust = 0.5),
+        axis.title = element_text(family = "IBM Plex Sans", size = 18),
+        axis.text = element_text(family = "IBM Plex Mono", size = 16.5),
+        legend.title = element_text(family = "Open Sans Semibold", size = 14),
+        legend.text = element_text(family = "IBM Sans Plex", size = 14),
+        panel.grid.major.x = element_line(colour = "white", linetype = "dashed"),
+        panel.grid.minor.x = element_line(colour = "white", linetype = "dashed"),
+        panel.grid.major.y = element_line(colour = "grey75", linetype = 2, size = 0.3),
+        panel.grid.minor.y = element_line(colour = "grey75", linetype = 2, size = 0.3)
+      )
+
+theme_set(ret)
+```
 
 ----
 
@@ -85,6 +113,26 @@ contacts %>%
   select(supporter_id, total_gifts_from_contacts = total_gifts, total_amount_from_transactions = amount)
 ```
 
+```{r}
+contacts %>% 
+  left_join((transactions %>% 
+               group_by(supporter_id) %>% 
+               summarise(amount = sum(amount))), 
+            by = "supporter_id") %>% 
+  filter(total_gifts < amount) %>% 
+  select(supporter_id, total_gifts_from_contacts = total_gifts, total_amount_from_transactions = amount) %>% 
+  mutate(diff = total_amount_from_transactions - total_gifts_from_contacts) %>% 
+  ggplot(aes(diff)) +
+  geom_histogram(color = "grey") +
+  scale_x_log10(labels = dollar) +
+  labs(title = "Discrepancy between Contacts and Transactions isn't a rounding error",
+       subtitle = "Many transactions appear to be missing entirely from Contacts",
+       x = "Difference in total gifts between Contacts and Transactions",
+       y = "Number of supporters",
+       caption = "FIGURE 1: Discrepancy between total gifts in Contacts and Transactions tables")
+```
+
+
 * Given that I was told that the datasets were compiled at the same time, I took "this year" to mean the calendar year 2017.
 
 For this project, given the scope that I'm working within, I'm going to create a "master" dataset by merging what I feel are the relevant parts of Transactions and Non-Financial Actions into Contacts. 
@@ -137,7 +185,8 @@ contacts %>%
        subtitle = "Note that this graph only shows supporters whose ages are known.",
        x = "Age",
        y = "Average donation amount",
-       fill = "Gender") +
+       fill = "Gender",
+       caption = "FIGURE 2: Average donation amount by age and gender") +
   theme(legend.position = "top")
 ```
 
@@ -158,7 +207,7 @@ contacts %>%
   ggplot(aes(age, fill = gender)) +
   geom_histogram(binwidth = 2, color = "grey", position = "fill") +
   labs(title = "More females donate across all age groups than males",
-       subtitle = paste0("Do younger donors not like to disclose their gender?", emo::ji("thinking")),
+       subtitle = "Do younger donors not like to disclose their gender?",
        x = "Age",
        y = "Proportion of supporters",
        fill = "Gender") +
@@ -169,7 +218,7 @@ contacts %>%
   ggplot(aes(age, fill = religion)) +
   geom_histogram(binwidth = 2, color = "grey") +
   labs(title = "Most older donors identify as Christian",
-       subtitle = paste0("Do younger donors not like to disclose their religion?", emo::ji("thinking")),
+       subtitle = "Do younger donors not like to disclose their religion?",
        x = "Age",
        y = "Number of supporters",
        fill = "Religion") +
@@ -181,13 +230,16 @@ contacts %>%
   count(state) %>%
   mutate(state = fct_reorder(state, n)) %>% 
   ggplot(aes(state, n)) +
-  geom_col() +
+  geom_col(width = 0.6) +
   coord_flip() +
   labs(title = "Most donors in AUS come from VIC and NSW as expected",
        x = "State",
        y = "Number of supporters")
 ```
 
+```{r}
+
+```
 
 
 
