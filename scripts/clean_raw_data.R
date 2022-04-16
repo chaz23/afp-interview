@@ -94,8 +94,8 @@ contacts <- contacts_raw %>%
                            state == "WEL" ~ "WELLINGTON",
                            TRUE ~ state)) %>% 
   
-  # Change NAs to Unknown in religion.
-  mutate(religion = if_else(is.na(religion), "Unknown", religion)) %>% 
+  # Change NAs to Unknown in religion and gender.
+  replace_na(list(religion = "Unknown", gender = "Unknown")) %>% 
   
   # Remove deceased supporters.
   anti_join(deceased, by = "supporter_id") %>% 
