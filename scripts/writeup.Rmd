@@ -17,9 +17,12 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, out.width 
 ```{r}
 library(dplyr)
 library(forcats)
+library(stringr)
 library(ggplot2)
 library(scales)
 library(showtext)
+library(ggthemes)
+library(tidytext)
 
 load("C:/Users/chari/Documents/afp-data/clean_data.Rda")
 ```
@@ -182,11 +185,25 @@ contacts %>%
   geom_boxplot() +
   coord_cartesian(ylim = c(0, 250)) +
   labs(title = "Males appear to donate larger amounts and have a wider spread than females",
-       subtitle = "Note that this graph only shows supporters whose ages are known.",
+       subtitle = "Note that this graph only shows supporters whose ages are known",
        x = "Age",
        y = "Average donation amount",
        fill = "Gender",
-       caption = "FIGURE 2: Average donation amount by age and gender") +
+       caption = "FIGURE 2: Boxplot of average donation amount by age and gender") +
+  theme(legend.position = "top")
+
+contacts %>% 
+  filter(total_gifts > 0) %>% 
+  ggplot(aes(age, avg_gift_amount, color = gender)) +
+  geom_point(position = "jitter", alpha = 0.2) +
+  scale_y_log10(labels = dollar) +
+  geom_smooth() +
+  labs(title = "Average donation amount rises with age and declines slightly",
+       subtitle = "Beware: the line only looks flat because the y-axis is log-transformed!",
+       x = "Age",
+       y = "Average donation amount",
+       fill = "Gender",
+       caption = "FIGURE 3: Scatterplot of average donation amount by age and gender") +
   theme(legend.position = "top")
 ```
 
@@ -239,10 +256,71 @@ contacts %>%
 
 ```{r}
 
+
+contacts %>% 
+  select(age, total_gifts) %>%
+  mutate(total_gifts = log10(total_gifts + 0.1)) %>% 
+  na.omit() %>% 
+  corrr::correlate() %>% 
+  corrr::fashion()
 ```
 
 
+```{r}
+campaigns_summarised <- transactions %>%
+  mutate(source = str_replace_all(source, "-", " "),
+         source = str_replace_all(source, "[0-9]", " ")) %>% 
+  unnest_tokens(campaign, source, to_lower = FALSE) %>% 
+  left_join(campaign_list, by = "campaign") %>% 
+  mutate(campaign = if_else(!is.na(desc), paste0(campaign, " (", desc, ")"), campaign)) %>% 
+  group_by(campaign) %>% 
+  summarise(n = n(),
+            min_amount = min(amount),
+            max_amount = max(amount),
+            median_amount = median(amount),
+            avg_amount = mean(amount),
+            total_amount = sum(amount)) %>% 
+  arrange(desc(n))
 
+campaigns_summarised %>%
+  mutate(campaign = fct_reorder(campaign, n)) %>% 
+  head(20) %>% 
+  ggplot(aes(n, campaign)) +
+  geom_col()
+
+campaigns_summarised %>%
+  mutate(campaign = fct_reorder(campaign, total_amount)) %>% 
+  head(20) %>% 
+  ggplot(aes(total_amount, campaign)) +
+  geom_col()
+
+campaigns_summarised %>%
+  mutate(campaign = fct_reorder(campaign, median_amount)) %>% 
+  head(20) %>% 
+  ggplot(aes(median_amount, campaign)) +
+  geom_col()
+
+campaigns_summarised %>%
+  mutate(campaign = fct_reorder(campaign, max_amount)) %>% 
+  head(20) %>% 
+  ggplot(aes(max_amount, campaign)) +
+  geom_col()
+```
+
+```{r}
+aus_map_data <- map_data("world") %>% 
+  as_tibble() %>% 
+  filter(region == "Australia") %>% 
+  filter(long < 155)
+
+contacts %>% 
+  filter(country == "Australia") %>% 
+  filter(lon > 112) %>%
+  ggplot(aes(lon, lat)) +
+  geom_polygon(aes(long, lat, group = group), data = aus_map_data, fill = "white", color = "grey") +
+  geom_point(aes(color = state, size = avg_gift_amount), alpha = 0.2) +
+  theme_map()
+```
 
 
 
