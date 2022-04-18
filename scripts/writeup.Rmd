@@ -24,6 +24,8 @@ library(scales)
 library(showtext)
 library(ggthemes)
 library(tidytext)
+library(tidymodels)
+library(textrecipes)
 
 load("C:/Users/chari/Documents/afp-data/clean_data.Rda")
 load("C:/Users/chari/Documents/afp-data/raw_data.Rda")
@@ -65,9 +67,9 @@ theme_set(ret)
 
 Before I begin, please allow me to lay the boundaries of this analysis. 
 
-Given that the purpose of this task is simply to gain some insight into my thought process, methodology and personality, I'm going to take on a narrative style in this write-up and guide you through my thought process as I explored the data. There are many paths that I could have gone down in trying to answer the questions presented. The approach that I took was to simply pick one of those after doing some exploratory data analysis and seeing where that led. In real life, this would have been an iterative process of exploration and evaluation. The questions we orignally asked may have even evolved based on our findings. 
+Given that the purpose of this task is simply to gain some insight into my thought process, methodology and personality, I'm going to take on a narrative style in this write-up and guide you through my thought process as I explored the data. There are many paths that I could have gone down in trying to answer the questions presented. The approach that I took was to simply pick one of those after doing some exploratory data analysis and see where that led. In real life, this would have been an iterative process of exploration and evaluation. The questions we orignally asked may have even evolved based on our findings. 
 
-However, I decided not to iterate on my findings or modelling outcomes regardless of model accuracy. Given the motivation of this task as well as the limited time available, this seemed reasonable.
+However, I decided at the start not to iterate on my findings or modelling outcomes regardless of model accuracy. Given the motivation of this task as well as the limited time available, this seemed reasonable.
 
 Anyway, I like to explain things so I hope you find this enjoyable at the very least! Who knows, perhaps you'll even learn something new!! `r emo::ji("sparkles")`
 
@@ -77,7 +79,7 @@ All computation was performed in R using R version 4.1.2. You can access all my 
 
 `r emo::ji("bulb")` ***renv** manages all the packages and their versions that I have used for this project. If you were to clone my repo and run my code, the renv lockfile would ensure that you used the same R and package versions that I did.* 
 
-However, as I have kept all input and output data on my local machine in the interests of confidentiality (i.e not storing it in a Github public repository), this is mostly for illustrative purposes as far as this write-up goes. In real life, I like to maintain reproducibility.
+However, as I have kept all input and output data on my local machine in the interests of confidentiality (i.e not storing it in a Github public repository), this is mostly for illustrative purposes as far as this write-up goes. In real life, I like to maintain transparency and reproducibility.
 
 ### Why are we here and what's coming next?
 
@@ -102,7 +104,7 @@ Cool, now I'll get straight into it.
 
 ### Towards internal consistency
 
-Before working with the data directly, I take some time to check its level of cleanliness and internal consistency. After all, garbage in equals garbage out. One thing I discovered early on is that the data between 2 tables - Contacts and Transactions - does not seem to match up. I'll remind you briefly what columns we had in the original data.
+Before working with data directly, I often take some time to check its level of cleanliness and internal consistency. After all, garbage in equals garbage out. One thing I discovered early on is that the data between 2 tables - Contacts and Transactions - does not seem to match up. I'll remind you briefly what columns we had in the original data.
 
 **Contacts:**
 
@@ -131,7 +133,7 @@ contacts %>%
   filter(diff <= 10)
 ```
 
-My initial hunch was that this could be a rounding error, for example where `r dollar(472)` in one table was recorded as `r dollar(470)` in another.
+My initial hunch was that this could be a rounding error, for example where `r dollar(472)` in one table was recorded as `r dollar(470)` in another. Yet that didn't seem to be the case as the following frequency histogram seems to suggest.
 
 ```{r}
 contacts %>% 
@@ -152,11 +154,15 @@ contacts %>%
        caption = "FIGURE 1: Discrepancy between total gifts in Contacts and Transactions tables (on log scale)")
 ```
 
-Given that about a quarter of the Transactions dataset is inconsistent with Contacts, this is a **huge red flag** and in real life I would have investigated this further to update my understanding and check whether I had made any other mistakes. However, it does seem that ~57% of the discrepancies are only off by $10 or less, so **perhaps it's a mix of rounding errors and something else**. 
+Given that about a quarter of the Transactions dataset is inconsistent with Contacts, this is a **huge red flag** and in real life I would have investigated this further to update my understanding and check whether I had made some mistake. However, it does seem that ~57% of the discrepancies are only off by $10 or less, so **perhaps it's a mix of rounding errors and something else**. 
 
 For now I chose to ignore this fact and move on.
 
 ### Outliers, missing data and augmentation
+
+`r emo::ji("robot")` *The script that I used to clean the raw data is accessible [here](https://github.com/chaz23/afp-interview/blob/main/scripts/clean_raw_data.R).*
+
+`r emo::ji("robot")` *The script that I used to get latitude and longitude coordinates is accessible [here](https://github.com/chaz23/afp-interview/blob/main/scripts/create_postcode_data.R).*
 
 I've created a "master" dataset by merging what I feel are the relevant parts of Transactions and Non-Financial Actions into Contacts, so I only have to work with one table. I want to get a sense of the overall distributions of my data, and understand **how much data is missing**.
 
@@ -172,7 +178,7 @@ Some preparatory steps I took to clean the data are as follows:
 * Removed deceased supporters as they might confuse our model if we decide to use one later on to predict giving.
 * Added a `nonfin_action` column to Contacts to indicate if a supporter has previously participated in any non-financial actions.
 * Added average gift amounts for each of the time periods presented. (Eg: `avg_gift_amount_last_year`).
-* Joined the Contacts and Transactions tables together to indicate what campaigns and source channels a supporter had participated in before. Having the campaigns and channels in this format means that I can possibly tokenize this data later if I want to feed it to a machine learning model. **I removed information related to 2017 to avoid data leakage**
+* Joined the Contacts and Transactions tables together to indicate what campaigns and source channels a supporter had participated in before. Having the campaigns and channels in this format means that I can possibly tokenize this data later if I want to feed it to a machine learning model. **I removed information related to 2017 to avoid data leakage.**
 
 `r emo::ji("bulb")` *Data leakage is when information from outside the training dataset is used to build a model. As you'll see later, I try to predict total donations in 2017 while pretending that I live in the year 2016 - if I used information from 2017, that would be an unfair and misleading advantage for my model.*
 
@@ -186,7 +192,7 @@ Furthermore, I took **"this year" to mean the calendar year 2017.**
 
 This is what my new tidied dataset looks like, ready for analysis. Here I've split the variables by data type (character and numeric). What I'm usually interested in seeing is the completion rate, which tells me the fraction of missing values, the number of unique entries in the character variables and the histograms of the numeric variables. What stands out to me is how much missing information we have on supporters when it comes to age. This is a pity, as age could well be a good signal when it comes to predicting giving.
 
-The histograms of the gift numbers and totals seem to indicate a log-normal distribution which we'll check later. Understandably, many people give small amounts, while a handful donate massively. There's a mix of demographic variables (gender, religion, age, location), attitudinal (communication preference) and behavioural (number of gifts given and average gift amount).
+The histograms of the gift numbers and totals seem to indicate a log-normal distribution. Understandably, many people give small amounts, while a handful donate massively. There's a mix of demographic (gender, religion, age, location), attitudinal (communication preference) and behavioural (number of gifts given and average gift amount) variables.
 
 ```{r}
 contacts %>% skimr::skim() %>% skimr::partition()
@@ -227,7 +233,7 @@ contacts %>%
        subtitle = "Beware: the fitted line only looks flat because the y-axis is log-transformed!",
        x = "Age",
        y = "Average donation amount",
-       fill = "Gender",
+       color = "Gender",
        caption = "FIGURE 3: Scatterplot of average donation amount by age and gender") +
   theme(legend.position = "top")
 ```
@@ -452,9 +458,9 @@ contacts %>%
 
 ## Returning briefly to the beginning
 
-Now that I've done some exploratory data analysis (EDA), I want to return briefly to our motivation and build a plan for how to approach the questions. 
+Now that I've done some exploratory data analysis (EDA), I want to return briefly to our initial questions and build a plan for how to approach them. 
 
-With segmentation, my initial thoughts are that there are probably signals in the underlying data that indicate how likely a person is to donate. If we can build a classifier that taps into these signals and returns a **probability of donating**, then we can use that to inform all of our questions - how we target people, how much we ask from them and what sort of messaging we send to them. 
+With segmentation, I feel that there are probably signals in the underlying data that indicate how likely a person is to donate. If we can build a classifier that taps into these signals and returns a **probability of donating**, then we can use that to inform all of our questions - how we target people, how much we ask from them and maybe even what sort of messaging we send to them. 
 
 After all, it makes sense to ask a bit more from someone you **know** is going to give anyway than from someone who is probably not going to give at all! `r emo::ji("moneybag")`
 
@@ -462,21 +468,21 @@ After all, it makes sense to ask a bit more from someone you **know** is going t
 
 ## Let the machines decide!
 
+`r emo::ji("robot")` *The script that I used to build the following models and tune their hyperparameters is accessible [here](https://github.com/chaz23/afp-interview/blob/main/scripts/modelling.Rmd).*
+
 To figure out a **probability of donating**, we first need to frame the question correctly. We know that we have data on who donated for the years 2015 - 2017. With this in mind, I'm going to try and train a model to accurately predict the 2017 donations based on the 2015 and 2016 donations. 
 
 `r emo::ji("bulb")` *This is called supervised learning - we already know the outcome in advance, so we can use that to our advantage and tune the model's hyperparameters (more on that below) to converge to the desired result.*
 
-My machine learning workflow in this instance consisted of fitting a logistic regression model first, doing some feature engineering and hyperparameter tuning on the predictors, then moving to a more powerful type of model (XGBoost) and doing a bit more feature engineering and tuning. At each stage I measured the sensitivity, specificity and ROC AUC and used them as metrics to guide my hyperparameter settings.
+My machine learning workflow in this instance consisted of fitting a logistic regression model first, doing some feature engineering and hyperparameter tuning on the predictors, then moving to a more powerful type of model (XGBoost) and doing a bit more feature engineering and tuning. At each stage I measured the sensitivity and specificity and used them as metrics to guide my hyperparameter settings.
 
 `r emo::ji("bulb")` ***Specificity** measures the proportion of people who did not donate that are correctly identified as such. In other words, of everyone who didn't donate, how many did we classify correctly? **Sensitivity** is the same thing but for people who did donate. **Accuracy** is the total proportion of the data that was classified correctly.*
 
 `r emo::ji("bulb")` *Feature engineering is when we compute new values based off data points that we have already. The hope is that these new **features** will create better representations of the data that will enable our model to learn more optimally.*
 
-`r emo::ji("bulb")` *Think of **hyperparameters** as knobs in a machine learning model that you cannot estimate in advance, so you need to fiddle with them to find the right setting. Just like roasting vegetables - I can never find the right temperature on the oven!*
+`r emo::ji("bulb")` *Think of **hyperparameters** as knobs in a machine learning model that you cannot estimate in advance, so you need to fiddle with them to find the right setting.*
 
 ### Fiddling with hyperparameters
-
-`r emo::ji("robot")` *All my workings related to tuning these models are accessible [here](https://github.com/chaz23/afp-interview/blob/main/scripts/modelling.Rmd).*
 
 I'll briefly specify, just for illustrative purposes, how my metrics changed with each iterative tuning step. 
 
@@ -503,15 +509,44 @@ tribble(
 
 See how we've slowly improved our ability to accurately identify the people who will actually donate!
 
+----
+
 ## Finally, some answers!
 
 If I haven't lost you yet, we can now answer our original questions!
 
 ### How to segment the supporter base
 
-In my mind, the question of segmentation is fundamentally linked to the **return on investment**. It makes sense to spend more effort on a supporter whose ROI is large. Luckily, our model gives us an idea on which supporters are easier targets.
+In my mind, the question of segmentation is fundamentally linked to the **return on investment**. 
 
-Remember that it gave us not just an outcome of who donated and who didn't, but also a **probability of donating**. In fact, it was using this probability that it determined the outcome. Anyone who was over 50% was classified as someone who would donate in 2017. By adjusting this 50% threshold to some other value, we can shift the proportions of donors that we capture.
+$ROI = Donation - Cost \ of \ engagement$
+
+For each supporter, we need to categorize them based on those two terms **donation** and **cost of engagement**. Let's use the average gift amount to parametrize donation.
+
+$Donation=f(avg\_gift\_amount)$
+
+```{r}
+contacts %>% 
+  ggplot(aes(avg_gift_amount)) +
+  geom_histogram(color = "grey", bins = 60) +
+  scale_x_log10(labels = dollar) +
+  labs(title = "Average gift amount allows us to parametrize the 'Donation' term",
+       x = "Average gift amount",
+       y = "Number of supporters",
+       caption = "FIGURE 14: Frequency count of average gift amount")
+```
+
+Now we need to parametrize the "cost of engagement". Luckily, our model can help us out here.
+
+Remember that it gave us not just an outcome of who donated and who didn't, but also a **probability of donating**. In fact, it was using this probability that it determined the outcome. Anyone who was deemed to have a "probability of donating" of over 50% was classified as someone who would donate in 2017. 
+
+**Someone with a high probability will have a low cost of engagement**. It makes sense - they don't need much prodding to donate! 
+
+So we can assume that cost of engagement is a function of the probability of donating.
+
+$Cost \ of \ engagement=f(p_{donating})$
+
+The following chart shows how the model distributed supporters across the domain of [0, 1] when it came to assigning this probability of donating. 
 
 ```{r}
 threshold_data %>% 
@@ -526,18 +561,34 @@ threshold_data %>%
   scale_x_continuous(labels = percent, breaks = seq(0, 1, 0.1)) +
   scale_y_continuous(labels = percent, breaks = seq(0, 1, 0.1)) +
   labs(title = "Shifting the dotted line to the right increases sensitivity",
-       subtitle = "This means we capture more donors at the expense of targeting non-donors",
+       subtitle = "This means we capture more donors at the expense of excluding non-donors",
        color = "Metric",
        x = "Probability of donating",
        y = "Metric value",
-       caption = "FIGURE 14: Variation of metrics according to the predicted probability of donating")
+       caption = "FIGURE 15: Variation of metrics according to the predicted probability of donating")
 ```
 
-As the title and subtitle suggest, if the costs associated with engaging with donors is high, we would want to shift the line to the left. If the cost is low, we wouldn't care if we targeted more people who don't donate - we'd want to make sure we reached the maximum number of people who would donate.
+Now we can combine the two to figure out an optimal segmentation strategy. 
 
-Additionally, we might have different dotted lines at different thresholds (eg: 0-30%, 31-70%, 71-100%) and treat those categories differently.
+In the following figure, I have done exactly that to showcase how we can **create regions in the plot to segment supporters**. `r emo::ji("sparkles")`
 
-Basically, this is one of the ways that I would approach segmentation.
+```{r}
+test %>% 
+  mutate(donated = factor(donated)) %>% 
+  bind_cols(predict(xgb_fit, new_data = test, type = "prob")) %>% 
+  left_join(contacts %>% select(supporter_id, avg_gift_amount), by = "supporter_id") %>% 
+  ggplot(aes(.pred_Donated, avg_gift_amount + 0.1, color = donated)) +
+  geom_point(alpha = 0.15, position = "jitter") +
+  scale_x_continuous(labels = percent) +
+  scale_y_log10(labels = dollar) +
+  labs(title = "The X and Y axes parametrize the cost and return respectively",
+       subtitle = "We can create regions in this plot to segment donors in the future",
+       color = "Actually donated?",
+       x = "Probability of donating",
+       y = "Historical average gift amount",
+       caption = "FIGURE 16: Parametrization of the ROI on the test data fed to XGBoost") +
+  theme(legend.position = "top")
+```
 
 ### How much can we ask?
 
@@ -549,12 +600,21 @@ $Donation \ ask = \frac{(Most \ recent \ gift \ + \ Largest \ gift \ amount)}{2}
 
 where $f$ is bounded between $0$ and $1$.
 
+Along with this "recommended" amount, I would have 3 other options as well - 2 numerical options and 1 "Other" option where the supporter is free to choose their own donation amount.
+
 ### What do we send?
 
+Some thoughts I had are:
 
+* After segmenting the groups as specified above, we could tailor our communication to them accordingly. For example, the "high value" segment could perhaps be reached by telephone, or some other time-intensive means, whereas the lower groups could be reached via email etc.
+* Going on the insights derived from Figure 5, we could target younger groups with more secular messaging, in line with the way they identify.
+* Although I haven't done analysis into this, it might be interesting to see whether there is a temporal/seasonal correlation at the supporter level in the way that they donate. If so, we could possibly send them some form of messaging/newsletter a few weeks before their predicted donation date as a "reminder".
 
 ### Ideas for the future
 
+* While it's great to segment our existing supporter base, we should also be looking to expand it. One idea I had was to use Facebook ads to target individuals based on markers that we have identified. If this hasn't been implemented already, it could be a great way to spread our reach.
+* Using fancy graphics - static or interactive - could be a great way to spice up communications, be it newsletters or otherwise. People like things that look good, and they will feel more engaged. 
 
+----
 
-
+I hope that this analysis has been insightful - looking forward to discussing further! `r emo::ji("pray")`
