@@ -216,6 +216,9 @@ test %>%
   corrr::fashion()
 ```
 
+```{r}
+save(threshold_data, file = "C:/Users/chari/Documents/afp-data/modelling_data.Rda")
+```
 
 
 ```{r}
