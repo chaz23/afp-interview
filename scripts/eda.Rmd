@@ -16,13 +16,15 @@ library(forcats)
 library(ggplot2)
 library(tidytext)
 library(stringr)
+library(tidyr)
+library(ggthemes)
+library(corrr)
 
-load("./data/clean_data.Rda")
+load("C:/Users/chari/Documents/afp-data/clean_data.Rda")
 ```
 
 * How these individuals might be segmented and why?
   * Data consists of demographic, behavioural and attitudinal variables.
-  * **Conversation around what the variables mean and **
 * How would the donation ask in their next communication be calculated and why?
 * What might you send to the groups you identify and what might you not send to them and why?
 * How would you improve on these things in the future?
@@ -47,11 +49,12 @@ In total, there appear to be more female than male supporters although this coul
 contacts %>% 
   filter(!is.na(state)) %>% 
   filter(country == "Australia") %>%
-  count(state) %>% 
+  count(state) %>%
   mutate(state = fct_reorder(state, n)) %>% 
   ggplot(aes(state, n)) +
-  geom_col() +
-  coord_flip()
+  geom_col(width = 0.7) +
+  coord_flip() +
+  theme(aspect.ratio = 0.2)
 ```
 
 The majority of supporter are from NSW and VIC which is not surprising.
@@ -92,7 +95,7 @@ At almost every age group, the median average gift amount is higher for males.
 
 ```{r}
 contacts %>% 
-  ggplot(aes(total_gifts + 1, fill = gender)) +
+  ggplot(aes(total_gifts + .1, fill = gender)) +
   geom_histogram(color = "grey") +
   scale_x_log10()
 
@@ -100,6 +103,19 @@ contacts %>%
   ggplot(aes(total_gifts + 1, fill = gender)) +
   geom_histogram(color = "grey", position = "fill") +
   scale_x_log10()
+
+contacts %>% 
+  filter(total_gifts > 0) %>% 
+  ggplot(aes(age, total_gifts)) +
+  geom_point(position = "jitter", alpha = 0.2) +
+  scale_y_log10(labels = dollar)
+
+contacts %>% 
+  select(age, total_gifts) %>%
+  mutate(total_gifts = log10(total_gifts + 0.1)) %>% 
+  na.omit() %>% 
+  corrr::correlate() %>% 
+  corrr::fashion()
 ```
 
 There seems to be a huge spike associated with people who haven't given. The distribution of total gifts given who have given appears to be approximately log-normal (slightly left skewed). However at the upper end of the spectrum it appears to be dominated by males. It appears at the lower end of the spectrum (perhaps small-scale one-off givers) there seems to be a lack of demographic information, which seems to manifest across the other demographic variables too.
@@ -111,17 +127,18 @@ contacts %>%
   ggplot(aes(total_gifts + 1, fill = state)) +
   geom_histogram(color = "grey", position = "fill") +
   scale_x_log10()
+
+contacts %>% 
+  filter(!is.na(age) & !is.na(state)) %>% 
+  ggplot(aes(age, fill = state)) +
+  geom_histogram(color = "grey", binwidth = 5, position = "fill")
+
 ```
 
 Interesting that the proportion of supporters from ACT seems to increase towards higher givers.
 
 ```{r}
-campaign_list <- tibble(
-  campaign = c("RG", "SG", "CB", "IND", "HV", "REF", "CF", "RC", "CH", "GIFT", "MAG", "NEWS"),
-  desc = c("Regular Giving", "Single Giving", "Christmas Bowl", "Individual", "High Value", "Refugees", "Community Fundraising", "Ration Challenge", "Church", "Gifts for Peace", "Supporter Magazine", "Newsletter")
-)
-
-transactions_summarised <- transactions %>%
+campaigns_summarised <- transactions %>%
   mutate(source = str_replace_all(source, "-", " "),
          source = str_replace_all(source, "[0-9]", " ")) %>% 
   unnest_tokens(campaign, source, to_lower = FALSE) %>% 
@@ -132,35 +149,177 @@ transactions_summarised <- transactions %>%
             min_amount = min(amount),
             max_amount = max(amount),
             median_amount = median(amount),
-            avg_amount = mean(amount)) %>% 
+            avg_amount = mean(amount),
+            total_amount = sum(amount)) %>% 
   arrange(desc(n))
 ```
 
 ```{r}
-transactions_summarised %>%
+campaigns_summarised %>%
   mutate(campaign = fct_reorder(campaign, n)) %>% 
   head(20) %>% 
   ggplot(aes(n, campaign)) +
+  geom_col()
+
+campaigns_summarised %>%
+  mutate(campaign = fct_reorder(campaign, total_amount)) %>% 
+  head(20) %>% 
+  ggplot(aes(total_amount, campaign)) +
+  geom_col()
+
+campaigns_summarised %>%
+  mutate(campaign = fct_reorder(campaign, median_amount)) %>% 
+  head(20) %>% 
+  ggplot(aes(median_amount, campaign)) +
+  geom_col()
+
+campaigns_summarised %>%
+  mutate(campaign = fct_reorder(campaign, max_amount)) %>% 
+  head(20) %>% 
+  ggplot(aes(max_amount, campaign)) +
   geom_col()
 ```
 
 Regular givers, Christmas bowl, newsletters and individual givers make up the bulk of the transactions. 
 
 ```{r}
-transactions_summarised %>%
+campaigns_summarised %>%
   mutate(campaign = fct_reorder(campaign, median_amount)) %>% 
   head(20) %>% 
   ggplot(aes(median_amount, campaign)) +
   geom_col()
 ```
 
+```{r}
+transactions_summarised <- transactions %>% 
+  group_by(supporter_id) %>% 
+  summarise(amount = sum(amount))
+
+transactions_summarised %>% 
+  distinct(supporter_id)
+
+contacts %>% 
+  left_join(transactions_summarised, by = "supporter_id") %>% 
+  filter(total_gifts < amount)
+```
+
+```{r}
+contacts %>% 
+  left_join((nonfin_actions %>% 
+               mutate(nonfin_action = "Participated") %>% 
+               select(supporter_id, nonfin_action)),
+            by = "supporter_id") %>% 
+  replace_na(list(nonfin_action = "Not Participated"))
+```
+
+```{r}
+aus_map_data <- map_data("world") %>% 
+  as_tibble() %>% 
+  filter(region == "Australia") %>% 
+  filter(long < 155)
+
+contacts %>% 
+  filter(country == "Australia") %>% 
+  filter(lon > 112) %>%
+  ggplot(aes(lon, lat)) +
+  geom_polygon(aes(long, lat, group = group), data = aus_map_data, fill = "white", color = "grey") +
+  geom_point(aes(color = state, size = avg_gift_amount), alpha = 0.2) +
+  theme_map()
+  
+
+aus_map_data %>% 
+  group_by(region) %>% 
+  summarise(min_lon = min(long),
+            max_lon = max(long),
+            min_lat = min(lat),
+            max_lat = max(lat))
+```
+
+```{r}
+contacts %>% 
+  mutate(comms_preference = str_replace_all(comms_preference, "[}]", ","),
+         comms_preference = str_replace_all(comms_preference, "[{}]", "")) %>% 
+  filter(!is.na(comms_preference)) %>% 
+  unnest_tokens(comm_method, comms_preference) %>% 
+  distinct(comm_method, supporter_id, .keep_all = TRUE) %>%
+  group_by(comm_method) %>% 
+  summarise(n = n(),
+            num_gifts = sum(total_number_of_gifts),
+            avg_gift_amount = mean(avg_gift_amount),
+            total_gift_amount = sum(total_gifts))
+```
+
+```{r}
+contacts %>% 
+  mutate(comms_preference = str_replace_all(comms_preference, "\\}\\{", ","),
+         comms_preference = str_replace_all(comms_preference, "\\}", ""),
+         comms_preference = str_replace_all(comms_preference, "\\{", ""),
+         comms_preference = str_replace_all(comms_preference, "AFP-", "")) %>%
+  tidytext::unnest_tokens(comms_pref, comms_preference) %>% 
+  count(comms_pref, sort = TRUE)
+```
+
+
+```{r}
+contacts %>% 
+  mutate(this_vs_last_year = abs(total_gifts_this_year - total_gifts_last_year)) %>% 
+  ggplot(aes(this_vs_last_year + .1)) +
+  geom_histogram(color = "grey") + 
+  scale_x_log10()
+
+contacts %>% 
+  mutate(this_vs_last_year = total_gifts_this_year - total_gifts_last_year) %>% 
+  select(total_gifts_this_year, this_vs_last_year) %>%
+  mutate(this_vs_last_year = log10(this_vs_last_year + 0.1)) %>% 
+  correlate() %>% 
+  fashion()
+```
+
+
+
+```{r}
+contacts %>% 
+  filter(total_number_of_gifts < num_gifts_two_years_ago)
+```
+
+```{r}
+transactions %>%
+  filter(date < "2017-01-01") %>%
+  mutate(source = str_replace_all(source, "-", " "),
+         source = str_replace_all(source, "[0-9]", " ")) %>% 
+  unnest_tokens(campaign, source, to_lower = FALSE) %>% 
+  distinct(supporter_id, campaign) %>% 
+  mutate(value = campaign) %>% 
+  pivot_wider(names_from = campaign, values_from = value) %>% 
+  unite("previous_campaigns", AFP:last_col(), sep = "|", na.rm = TRUE)
+```
+
+```{r}
+transactions %>% 
+  mutate(source_2 = tolower(source_2)) %>% 
+  count(source_2, sort = TRUE) %>% 
+  print(n = 70)
+
+prev_source_2 <- transactions %>% 
+  mutate(source_2 = tolower(source_2),
+         source_2 = str_replace_all(source_2, "-", "")) %>%
+  filter(date < "2017-01-01") %>%
+  filter(!is.na(source_2)) %>% 
+  distinct(supporter_id, source_2) %>%
+  mutate(value = source_2) %>% 
+  pivot_wider(names_from = source_2, values_from = value) %>% 
+  unite("prev_source_2", directmail:last_col(), sep = "|", na.rm = TRUE)
+```
+
+
+* Are there outliers in the data and what do they mean?
 
 
 
 
+Improvement:
 
-
-
+* FB ads targeting?
 
 
 
