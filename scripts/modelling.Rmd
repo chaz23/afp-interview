@@ -15,6 +15,8 @@ library(dplyr)
 library(tidymodels)
 library(textrecipes)
 library(themis)
+library(probably)
+library(ggplot2)
 
 load("C:/Users/chari/Documents/afp-data/clean_data.Rda")
 
@@ -44,12 +46,9 @@ contacts_split <- contacts %>%
          total_gifts_last_year,
          total_gifts_two_years_ago,
          total_number_of_gifts, 
-         num_gifts_last_year, 
-         num_gifts_two_years_ago, 
          previous_campaigns, 
          nonfin_action,
          prev_source_2,
-         postcode,
          donated) %>% 
   na.omit() %>% 
   initial_split(strata = donated)
@@ -119,7 +118,7 @@ Logistic regression:
 set.seed(2891)
 
 # Create recipe.
-xgb_rec <- recipe(donated ~ supporter_id + total_gifts_last_year + total_gifts + total_gifts_two_years_ago + total_number_of_gifts + gender + previous_campaigns + comms_preference + nonfin_action + postcode, 
+xgb_rec <- recipe(donated ~ supporter_id + total_gifts_last_year + total_gifts + total_gifts_two_years_ago + total_number_of_gifts + gender + previous_campaigns + comms_preference + nonfin_action, 
                   data = train) %>% 
   update_role(supporter_id, new_role = "id") %>% 
   step_downsample(donated, under_ratio = 2) %>%
@@ -168,6 +167,55 @@ XGBoost:
 0.746, 0.882, 0.905, 0.864 with comms preference (tuned to tokens = 3)
 0.748, 0.884, 0.905, 0.865 with previous source 2 channels (tuned to tokens = 20) *removed*
 0.756, 0.895, 0.911, 0.876 with previous non financial actions
+
+```{r}
+# Fit to the test set.
+xgb_fit <- xgb_wf %>% 
+  fit(train)
+
+final_metrics <- bind_rows(
+  test %>% 
+    mutate(donated = factor(donated)) %>% 
+    bind_cols(predict(xgb_fit, new_data = test)) %>% 
+    accuracy(truth = donated, estimate = .pred_class),
+  test %>% 
+    mutate(donated = factor(donated)) %>% 
+    bind_cols(predict(xgb_fit, new_data = test)) %>% 
+    sens(truth = donated, estimate = .pred_class),
+  test %>% 
+    mutate(donated = factor(donated)) %>% 
+    bind_cols(predict(xgb_fit, new_data = test)) %>% 
+    spec(truth = donated, estimate = .pred_class)
+)
+```
+
+```{r}
+mod_pred <- test %>% 
+  mutate(donated = factor(donated)) %>% 
+  bind_cols(predict(xgb_fit, new_data = test, type = "prob")) %>% 
+  select(donated, .pred_Donated) %>% 
+  mutate(.pred_class = make_two_class_pred(estimate = .pred_Donated, levels = levels(donated), threshold = 0.5))
+
+threshold_data <- mod_pred %>% 
+  filter(.pred_class != "[EQ]") %>% 
+  threshold_perf(donated, .pred_Donated, thresholds = seq(0, 1, 0.0025))
+
+threshold_data %>% 
+  filter(.metric != "distance") %>% 
+  ggplot(aes(.threshold, .estimate, color = .metric)) +
+  geom_line() +
+  scale_y_continuous(labels = scales::percent, breaks = seq(0, 1, 0.1))
+
+test %>% 
+  mutate(donated = factor(donated)) %>% 
+  bind_cols(predict(xgb_fit, new_data = test, type = "prob")) %>% 
+  left_join(contacts %>% select(supporter_id, total_gifts_this_year)) %>% 
+  select(.pred_Donated, total_gifts_this_year) %>% 
+  mutate(total_gifts_this_year = log10(total_gifts_this_year + 0.1)) %>% 
+  corrr::correlate() %>% 
+  corrr::fashion()
+```
+
 
 
 ```{r}
