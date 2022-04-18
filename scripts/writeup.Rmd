@@ -27,6 +27,7 @@ library(tidytext)
 
 load("C:/Users/chari/Documents/afp-data/clean_data.Rda")
 load("C:/Users/chari/Documents/afp-data/raw_data.Rda")
+load("C:/Users/chari/Documents/afp-data/modelling_data.Rda")
 ```
 
 ```{r cache=TRUE}
@@ -455,21 +456,102 @@ Now that I've done some exploratory data analysis (EDA), I want to return briefl
 
 With segmentation, my initial thoughts are that there are probably signals in the underlying data that indicate how likely a person is to donate. If we can build a classifier that taps into these signals and returns a **probability of donating**, then we can use that to inform all of our questions - how we target people, how much we ask from them and what sort of messaging we send to them. 
 
-After all, it makes sense to ask a bit more from someone you **know** is going to give anyway than from someone who is probably not going to give at all! `r emo::ji("moneybag")``
+After all, it makes sense to ask a bit more from someone you **know** is going to give anyway than from someone who is probably not going to give at all! `r emo::ji("moneybag")`
 
 ----
 
 ## Let the machines decide!
 
+To figure out a **probability of donating**, we first need to frame the question correctly. We know that we have data on who donated for the years 2015 - 2017. With this in mind, I'm going to try and train a model to accurately predict the 2017 donations based on the 2015 and 2016 donations. 
 
+`r emo::ji("bulb")` *This is called supervised learning - we already know the outcome in advance, so we can use that to our advantage and tune the model's hyperparameters (more on that below) to converge to the desired result.*
+
+My machine learning workflow in this instance consisted of fitting a logistic regression model first, doing some feature engineering and hyperparameter tuning on the predictors, then moving to a more powerful type of model (XGBoost) and doing a bit more feature engineering and tuning. At each stage I measured the sensitivity, specificity and ROC AUC and used them as metrics to guide my hyperparameter settings.
+
+`r emo::ji("bulb")` ***Specificity** measures the proportion of people who did not donate that are correctly identified as such. In other words, of everyone who didn't donate, how many did we classify correctly? **Sensitivity** is the same thing but for people who did donate. **Accuracy** is the total proportion of the data that was classified correctly.*
+
+`r emo::ji("bulb")` *Feature engineering is when we compute new values based off data points that we have already. The hope is that these new **features** will create better representations of the data that will enable our model to learn more optimally.*
+
+`r emo::ji("bulb")` *Think of **hyperparameters** as knobs in a machine learning model that you cannot estimate in advance, so you need to fiddle with them to find the right setting. Just like roasting vegetables - I can never find the right temperature on the oven!*
+
+### Fiddling with hyperparameters
+
+`r emo::ji("robot")` *All my workings related to tuning these models are accessible [here](https://github.com/chaz23/afp-interview/blob/main/scripts/modelling.Rmd).*
+
+I'll briefly specify, just for illustrative purposes, how my metrics changed with each iterative tuning step. 
+
+Remember, I'm trying to predict 2017 donations. I start off by trying to predict it using just log-transformed total gofts of 2016, and then at each step I add an additional predictor or do a tuning step. 
+
+Note that when I add previous campaigns and non-financial actions I've removed any related to 2017 to avoid data leakage.
+
+```{r}
+tribble(
+  ~ model, ~ step, ~ sensitivity, ~ specificity, ~ roc_auc, ~ accuracy,
+  "logistic_regression", "log transform 2016 total gifts", 0.148, 0.989, 0.756, NA_real_,
+  "logistic_regression", "use a downsampling under-ratio of 2", 0.607, 0.845, 0.756, NA_real_,
+  "logistic_regression", "add total gifts", 0.578, 0.898, 0.801, NA_real_,
+  "logistic_regression", "added total gifts 2 years ago", 0.564, 0.922, 0.813, NA_real_,
+  "logistic_regression", "added total number of gifts", 0.612, 0.918, 0.833, NA_real_,
+  "logistic_regression", "added gender", 0.610, 0.915, 0.849, NA_real_,
+  "xgboost", "switched to xgboost", 0.685, 0.895, 0.877, NA_real_,
+  "xgboost", "added previous campaigns", 0.715, 0.891, 0.898, NA_real_,
+  "xgboost", "added communications preference", 0.746, 0.882, 0.905, 0.864,
+  "xgboost", "added previous non-financial actions", 0.756, 0.895, 0.911, 0.876
+) %>% 
+  select(-model)
+```
+
+See how we've slowly improved our ability to accurately identify the people who will actually donate!
 
 ## Finally, some answers!
 
+If I haven't lost you yet, we can now answer our original questions!
+
 ### How to segment the supporter base
+
+In my mind, the question of segmentation is fundamentally linked to the **return on investment**. It makes sense to spend more effort on a supporter whose ROI is large. Luckily, our model gives us an idea on which supporters are easier targets.
+
+Remember that it gave us not just an outcome of who donated and who didn't, but also a **probability of donating**. In fact, it was using this probability that it determined the outcome. Anyone who was over 50% was classified as someone who would donate in 2017. By adjusting this 50% threshold to some other value, we can shift the proportions of donors that we capture.
+
+```{r}
+threshold_data %>% 
+  filter(.metric != "distance") %>% 
+  mutate(.threshold = 1 - .threshold) %>%
+  mutate(.metric = case_when(.metric == "sens"~ "sensitivity",
+                             .metric == "spec"~ "specificity",
+                             TRUE ~ .metric)) %>% 
+  ggplot(aes(.threshold, .estimate, color = .metric)) +
+  geom_line() +
+  geom_vline(xintercept = 0.5, lty = "dashed", alpha = 0.7) +
+  scale_x_continuous(labels = percent, breaks = seq(0, 1, 0.1)) +
+  scale_y_continuous(labels = percent, breaks = seq(0, 1, 0.1)) +
+  labs(title = "Shifting the dotted line to the right increases sensitivity",
+       subtitle = "This means we capture more donors at the expense of targeting non-donors",
+       color = "Metric",
+       x = "Probability of donating",
+       y = "Metric value",
+       caption = "FIGURE 14: Variation of metrics according to the predicted probability of donating")
+```
+
+As the title and subtitle suggest, if the costs associated with engaging with donors is high, we would want to shift the line to the left. If the cost is low, we wouldn't care if we targeted more people who don't donate - we'd want to make sure we reached the maximum number of people who would donate.
+
+Additionally, we might have different dotted lines at different thresholds (eg: 0-30%, 31-70%, 71-100%) and treat those categories differently.
+
+Basically, this is one of the ways that I would approach segmentation.
 
 ### How much can we ask?
 
+To answer this, I would adapt existing strategies of asking and modify them based on the additional information that we have.
+
+For example, I might calculate the average of the most recent gift and largest gift amount (recommended strategy), and then multiply it by a value between 10% and 25% based on the probability of donating and the number of times donated previously (incorporating additional info). Something like: 
+
+$Donation \ ask = \frac{(Most \ recent \ gift \ + \ Largest \ gift \ amount)}{2} * (110\%+15\% * f(p_{donating},n_{donations}))$
+
+where $f$ is bounded between $0$ and $1$.
+
 ### What do we send?
+
+
 
 ### Ideas for the future
 
