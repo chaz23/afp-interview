@@ -18,6 +18,7 @@ knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, out.width 
 library(dplyr)
 library(forcats)
 library(stringr)
+library(tidyr)
 library(ggplot2)
 library(scales)
 library(showtext)
@@ -25,6 +26,7 @@ library(ggthemes)
 library(tidytext)
 
 load("C:/Users/chari/Documents/afp-data/clean_data.Rda")
+load("C:/Users/chari/Documents/afp-data/raw_data.Rda")
 ```
 
 ```{r cache=TRUE}
@@ -58,36 +60,25 @@ theme_set(ret)
 
 ## Introduction
 
-### Scope of the analysis
+### Managing expectations
 
-First of all, please allow me to lay the boundaries and scope of this task and write-up. I understand that the purpose of this task is simply to gain some insight into my thought process, methodology and personality, and not to build the best segmentation model. 
+Before I begin, please allow me to lay the boundaries of this analysis. 
 
-Here I will take on a narrative style in this write-up and guide you through my thought process as I explore the data. There are many paths that one could go down when trying to answer the questions presented. I will simply pick one of those after doing some exploratory data analysis and see where that leads. In real life, this would be an iterative process of exploration and evaluation, as the questions we have originally asked will evolve based on our findings. I will not be updating the questions, nor iterating on my modelling outcomes regardless of model accuracy. Given the motivation of this task as well as the limited time available, this seems like a sensible approach.
+Given that the purpose of this task is simply to gain some insight into my thought process, methodology and personality, I'm going to take on a narrative style in this write-up and guide you through my thought process as I explored the data. There are many paths that I could have gone down in trying to answer the questions presented. The approach that I took was to simply pick one of those after doing some exploratory data analysis and seeing where that led. In real life, this would have been an iterative process of exploration and evaluation. The questions we orignally asked may have even evolved based on our findings. 
 
-Anyway, I hope you find this enjoyable at the very least! Who knows, perhaps you'll even learn something new!! `r emo::ji("sparkles")`
+However, I decided not to iterate on my findings or modelling outcomes regardless of model accuracy. Given the motivation of this task as well as the limited time available, this seemed reasonable.
 
-### Computation
+Anyway, I like to explain things so I hope you find this enjoyable at the very least! Who knows, perhaps you'll even learn something new!! `r emo::ji("sparkles")`
 
-All computation is performed in R using R version 4.1.2. You can access all my code via Github [here](https://github.com/chaz23/afp-interview). Throughout this document I will add links to scripts that I wrote for each section if relevant.
+### Setting up computation
 
-Reproducibility is an important part of good data science, so I have used the **renv** package to produce as reproducible an environment as possible. However, as I have kept all input and output data on my local machine in the interests of confidentiality (i.e not storing it in a Github public repository), this will affect reproducibility in this instance.
+All computation was performed in R using R version 4.1.2. You can access all my code via Github [here](https://github.com/chaz23/afp-interview). Throughout this document I will add links to scripts that I wrote for each section if relevant. I also used the **renv** package to produce as reproducible an environment as possible. 
 
-### Approach
+`r emo::ji("bulb")` ***renv** manages all the packages and their versions that I have used for this project. If you were to clone my repo and run my code, the renv lockfile would ensure that you used the same R and package versions that I did.* 
 
-While data science is partly art and partly science, I like to approach data analysis tasks in as principled and methodical a manner as I can. Usually, this involves 3 steps:
+However, as I have kept all input and output data on my local machine in the interests of confidentiality (i.e not storing it in a Github public repository), this is mostly for illustrative purposes as far as this write-up goes. In real life, I like to maintain reproducibility.
 
-* **Validation:** 
-
-Exploring and evaluating the cleanliness and self-consistency of the data. Handling missing data, making sure that data points match up with each other, understanding the meaning behind each variable, understanding the nature of outlying values 
-
-* **Description:**
-
-Exploratory data analysis. Slicing the data
-
-* Evaluation
-
-
-### Motivation
+### Why are we here and what's coming next?
 
 Analysis without a motivation is often aimless, so I'm glad that you have provided some questions to keep us on track!
 
@@ -96,15 +87,35 @@ Analysis without a motivation is often aimless, so I'm glad that you have provid
 * What might you send to the groups you identify and what might you not send to them and why?
 * How would you improve on these things in the future?
 
-These are some interesting questions, so let's dive into the data to see what we find!
+To keep my data analysis as methodical as I can here, I've tried to divide my workflow into 3 stages. (It's usually an iterative process but remember I said I'm not iterating here). The 3 stages are:
+
+* **Validation:** Evaluating data cleanliness and self-consistency, handling missing data and outliers etc.
+* **Description and modelling:** Looking at distributions, correlations etc. Articulating objective interpretations of the data that we can all agree on, and then modelling based on those.
+* **Evaluation:** Given the descriptions and modelling, **how do we answer our original questions?** 
+
+Cool, now I'll get straight into it.
 
 ----
 
-## Data preparation
+## Introducing ourselves to the data
 
-Before working with the data directly, I take some time to check its level of cleanliness and internal consistency. After all, garbage in equals garbage out. I won't include all the details, but I made some assumptions along the way:
+### Towards internal consistency
 
-* 7,592 out of the 32,188 supporters in the Transactions table had a `total_gifts` value (sum of all gifts across time in the Contacts table) lower than the sum of their individual transactions. Since this is about a quarter of the dataset, I chose to ignore this fact, although in reality with access to the complete dataset I would have investigated this further as it is a huge indication that the two datasets are not internally consistent.
+Before working with the data directly, I take some time to check its level of cleanliness and internal consistency. After all, garbage in equals garbage out. One thing I discovered early on is that the data between 2 tables - Contacts and Transactions - does not seem to match up. I'll remind you briefly what columns we had in the original data.
+
+**Contacts:**
+
+```{r}
+contacts_raw %>% str()
+```
+
+**Transactions:**
+
+```{r}
+transactions_raw %>% str()
+```
+
+It appears that the sum of transactions for **7,592 out of 32,188 supporters** in the Transactions table (sum of the `Amount` column) was different to the value of `Total Gifts` for those same supporters in the Contacts table.
 
 ```{r}
 contacts %>% 
@@ -113,8 +124,13 @@ contacts %>%
                summarise(amount = sum(amount))), 
             by = "supporter_id") %>% 
   filter(total_gifts < amount) %>% 
-  select(supporter_id, total_gifts_from_contacts = total_gifts, total_amount_from_transactions = amount)
+  select(supporter_id, total_gifts_from_contacts = total_gifts, total_amount_from_transactions = amount) %>% 
+  
+  mutate(diff = abs(total_gifts_from_contacts - total_amount_from_transactions)) %>% 
+  filter(diff <= 10)
 ```
+
+My initial hunch was that this could be a rounding error, for example where `r dollar(472)` in one table was recorded as `r dollar(470)` in another.
 
 ```{r}
 contacts %>% 
@@ -132,15 +148,20 @@ contacts %>%
        subtitle = "Many transactions appear to be missing entirely from Contacts",
        x = "Difference in total gifts between Contacts and Transactions",
        y = "Number of supporters",
-       caption = "FIGURE 1: Discrepancy between total gifts in Contacts and Transactions tables")
+       caption = "FIGURE 1: Discrepancy between total gifts in Contacts and Transactions tables (on log scale)")
 ```
 
+Given that about a quarter of the Transactions dataset is inconsistent with Contacts, this is a **huge red flag** and in real life I would have investigated this further to update my understanding and check whether I had made any other mistakes. However, it does seem that ~57% of the discrepancies are only off by $10 or less, so **perhaps it's a mix of rounding errors and something else**. 
 
-* Given that I was told that the datasets were compiled at the same time, I took "this year" to mean the calendar year 2017.
+For now I chose to ignore this fact and move on.
 
-For this project, given the scope that I'm working within, I'm going to create a "master" dataset by merging what I feel are the relevant parts of Transactions and Non-Financial Actions into Contacts. 
+### Outliers, missing data and augmentation
 
-Some steps I took to clean the data are as follows:
+I've created a "master" dataset by merging what I feel are the relevant parts of Transactions and Non-Financial Actions into Contacts, so I only have to work with one table. I want to get a sense of the overall distributions of my data, and understand **how much data is missing**.
+
+`r emo::ji("bulb")` *Understanding the causes of missing data is especially important if we want to feed our data to a machine learning model, as the vast majority of them do not like missing values. In those cases, we would need to impute those values, drop them or figure out another way to handle the problem.* 
+
+Some preparatory steps I took to clean the data are as follows:
 
 * Renamed columns according to the [R style guide](https://style.tidyverse.org/syntax.html#syntax).
 * Joined an [external postcodes dataset](https://gist.github.com/randomecho/5020859) to:
@@ -148,25 +169,21 @@ Some steps I took to clean the data are as follows:
   * Fill in missing values for the `state` column where the postcode was known. Note that this may yield slight inaccuracies in edge cases where multiple states share the same postcode.
 * Cleaned the `state` column for consistency - eg: change N.S.W to NSW etc.
 * Removed deceased supporters as they might confuse our model if we decide to use one later on to predict giving.
-* Joined the Contacts and Transactions tables together to indicate what campaigns a supporter had participated in before. Having the campaigns in this format means that I can possibly tokenize this data later if I want to feed it to a machine learning model.
+* Added a `nonfin_action` column to Contacts to indicate if a supporter has previously participated in any non-financial actions.
+* Added average gift amounts for each of the time periods presented. (Eg: `avg_gift_amount_last_year`).
+* Joined the Contacts and Transactions tables together to indicate what campaigns and source channels a supporter had participated in before. Having the campaigns and channels in this format means that I can possibly tokenize this data later if I want to feed it to a machine learning model. **I removed information related to 2017 to avoid data leakage**
+
+`r emo::ji("bulb")` *Data leakage is when information from outside the training dataset is used to build a model. As you'll see later, I try to predict total donations in 2017 while pretending that I live in the year 2016 - if I used information from 2017, that would be an unfair and misleading advantage for my model.*
 
 ```{r}
 contacts %>% 
   select(supporter_id, previous_campaigns) %>% 
-  na.omit()
+  filter(previous_campaigns != "Unknown")
 ```
 
-* Added a `nonfin_action` column to Contacts to indicate if a supporter has previously participated in any non-financial actions. Given the unbalanced classes and low number of distinct items in Non-Financial Actions I'm not going to spend too much time with it. Additionally, I'm going to make the assumption that anyone not in this table has never participated in a non-financial action.
+Furthermore, I took **"this year" to mean the calendar year 2017.**
 
-* Added average gift amounts for each of the time periods presented. (Eg: `avg_gift_amount_last_year`).
-
-----
-
-## Data exploration
-
-After I've cleaned the data to an acceptable level, I like to have a look at the characteristics of each variable. Notice how we're moving from the *validation* stage to the *description* stage. Descriptions give us objective interpretations that we can all agree on.
-
-Here I've split the variables by data type (character and numeric). What I'm usually interested in seeing is the completion rate, which tells me the fraction of missing values, the number of unique entries in the character variables and the histograms of the numeric variables.
+This is what my new tidied dataset looks like, ready for analysis. Here I've split the variables by data type (character and numeric). What I'm usually interested in seeing is the completion rate, which tells me the fraction of missing values, the number of unique entries in the character variables and the histograms of the numeric variables. What stands out to me is how much missing information we have on supporters when it comes to age. This is a pity, as age could well be a good signal when it comes to predicting giving.
 
 The histograms of the gift numbers and totals seem to indicate a log-normal distribution which we'll check later. Understandably, many people give small amounts, while a handful donate massively. There's a mix of demographic variables (gender, religion, age, location), attitudinal (communication preference) and behavioural (number of gifts given and average gift amount).
 
@@ -174,7 +191,15 @@ The histograms of the gift numbers and totals seem to indicate a log-normal dist
 contacts %>% skimr::skim() %>% skimr::partition()
 ```
 
+----
+
+## Diving deep with EDA
+
 This is where I begin to build some plots to start getting a feel for the data. I'll show you a handful of the ones I found interesting.
+
+### Demographics
+
+`r emo::ji("warning")` *Bear in mind that 88% of the data was not included in the following graphs containing `age` as it was unknown. However, let's assume for now that the values for age that we have are uniformly sampled from the population.*
 
 ```{r}
 contacts %>% 
@@ -185,7 +210,6 @@ contacts %>%
   geom_boxplot() +
   coord_cartesian(ylim = c(0, 250)) +
   labs(title = "Males appear to donate larger amounts and have a wider spread than females",
-       subtitle = "Note that this graph only shows supporters whose ages are known",
        x = "Age",
        y = "Average donation amount",
        fill = "Gender",
@@ -198,8 +222,8 @@ contacts %>%
   geom_point(position = "jitter", alpha = 0.2) +
   scale_y_log10(labels = dollar) +
   geom_smooth() +
-  labs(title = "Average donation amount rises with age and declines slightly",
-       subtitle = "Beware: the line only looks flat because the y-axis is log-transformed!",
+  labs(title = "Another perspective: avg donation amount vs. age and gender",
+       subtitle = "Beware: the fitted line only looks flat because the y-axis is log-transformed!",
        x = "Age",
        y = "Average donation amount",
        fill = "Gender",
@@ -207,7 +231,7 @@ contacts %>%
   theme(legend.position = "top")
 ```
 
-To dig a bit further into this, I took `age`, log-transformed `avg_gift amount` and `num_gifts_last_365_days` and then did a pairwise correlation between them all. The values below are the correlation coefficients. The value 0.56 suggests that there is a moderately strong relationship between age and gift amount. 
+To dig a bit further into this, I took `age`, log-transformed `avg_gift amount` and `num_gifts_last_365_days` and then did a pairwise correlation between them all. The values below are the correlation coefficients. The value 0.56 suggests that there is a moderately strong relationship between age and average gift amount. 
 
 ```{r}
 contacts %>% 
@@ -227,7 +251,8 @@ contacts %>%
        subtitle = "Do younger donors not like to disclose their gender?",
        x = "Age",
        y = "Proportion of supporters",
-       fill = "Gender") +
+       fill = "Gender",
+       caption = "FIGURE 4: Gender proportions of donors across age groups") +
   scale_y_continuous(labels = percent) +
   theme(legend.position = "top")
 
@@ -235,28 +260,72 @@ contacts %>%
   ggplot(aes(age, fill = religion)) +
   geom_histogram(binwidth = 2, color = "grey") +
   labs(title = "Most older donors identify as Christian",
-       subtitle = "Do younger donors not like to disclose their religion?",
        x = "Age",
        y = "Number of supporters",
-       fill = "Religion") +
+       fill = "Religion",
+       caption = "FIGURE 5: Number of donors by age and religion") +
   theme(legend.position = "top")
-
-contacts %>% 
-  filter(!is.na(state)) %>% 
-  filter(country == "Australia") %>%
-  count(state) %>%
-  mutate(state = fct_reorder(state, n)) %>% 
-  ggplot(aes(state, n)) +
-  geom_col(width = 0.6) +
-  coord_flip() +
-  labs(title = "Most donors in AUS come from VIC and NSW as expected",
-       x = "State",
-       y = "Number of supporters")
 ```
 
 ```{r}
+aus_map_data <- map_data("world") %>% 
+  as_tibble() %>% 
+  filter(region == "Australia") %>% 
+  filter(long < 155)
 
+contacts %>% 
+  filter(country == "Australia") %>% 
+  filter(lon > 112) %>%
+  ggplot(aes(lon, lat)) +
+  geom_polygon(aes(long, lat, group = group), data = aus_map_data, fill = "white", color = "grey") +
+  geom_point(aes(color = state, size = avg_gift_amount), alpha = 0.2) +
+  theme_map() +
+  labs(title = "Most larger donors are populated around the major cities",
+       x = "Age",
+       y = "Number of supporters",
+       fill = "State",
+       size = "Avg Gift Amount",
+       caption = "FIGURE 6: Donor locations around Australia") +
+  theme(legend.position = "top",
+        legend.text = element_text(family = "IBM Plex Mono", size = 16),
+        legend.title = element_text(family = "IBM Plex Mono", size = 16),
+        plot.title = element_text(family = "Open Sans Semibold", size = 20),
+        plot.caption = element_text(family = "IBM Plex Mono", size = 16, colour = "grey50", hjust = 0.5))
+```
 
+```{r}
+contacts %>% 
+  filter(!is.na(state)) %>% 
+  filter(country == "Australia") %>%
+  ggplot(aes(total_gifts + 1, fill = state)) +
+  geom_histogram(color = "grey", position = "fill") +
+  scale_x_log10(labels = dollar) +
+  scale_y_continuous(labels = percent) +
+  labs(title = "The proportion of donors in each group increases for ACT",
+       subtitle = "Do ACT donors generally donate more?",
+       x = "Total amount donated",
+       y = "Proportion of supporters",
+       fill = "State",
+       caption = "FIGURE 7: Proportion of donors in each donation bracket by state") +
+  theme(legend.position = "top")
+
+contacts %>% 
+  filter(!is.na(age) & !is.na(state)) %>% 
+  ggplot(aes(age, fill = state)) +
+  geom_histogram(color = "grey", binwidth = 5, position = "fill") +
+  scale_y_continuous(labels = percent) +
+  labs(title = "Or could this increase be correlated with age?",
+       subtitle = "Could we have an older ACT population in our donor base?",
+       x = "Age",
+       y = "Proportion of supporters",
+       fill = "State",
+       caption = "FIGURE 8: Proportion of donors in each age bracket by state") +
+  theme(legend.position = "top")
+```
+
+Trying to correlate age vs. total gifts does show a moderately strong linear relationship. It makes sense - the longer you've lived, the more time you've had to donate! If this is true, we should watch out for this multicollinearity later on if we want to use these variables as predictors in a model. But it needs further looking into.
+
+```{r}
 contacts %>% 
   select(age, total_gifts) %>%
   mutate(total_gifts = log10(total_gifts + 0.1)) %>% 
@@ -265,6 +334,7 @@ contacts %>%
   corrr::fashion()
 ```
 
+### Behaviours
 
 ```{r}
 campaigns_summarised <- transactions %>%
@@ -286,50 +356,122 @@ campaigns_summarised %>%
   mutate(campaign = fct_reorder(campaign, n)) %>% 
   head(20) %>% 
   ggplot(aes(n, campaign)) +
-  geom_col()
+  geom_col() +
+  labs(title = "Regular givers and Christmas Bowl are the highest volume campaigns",
+       subtitle = "EOFY also seems to be a particularly fruitful time of the year",
+       x = "Number of donations",
+       y = "Campaign",
+       caption = "FIGURE 9: Number of donors by campaign")
 
 campaigns_summarised %>%
   mutate(campaign = fct_reorder(campaign, total_amount)) %>% 
   head(20) %>% 
   ggplot(aes(total_amount, campaign)) +
-  geom_col()
+  geom_col() +
+  scale_x_continuous(labels = dollar) +
+  labs(title = "Christmas Bowl brings in the most money",
+       subtitle = "Newsletter also seems to be a successful campaigning method",
+       x = "Total donations",
+       y = "Campaign",
+       caption = "FIGURE 10: Total donation amount by campaign")
 
 campaigns_summarised %>%
   mutate(campaign = fct_reorder(campaign, median_amount)) %>% 
   head(20) %>% 
   ggplot(aes(median_amount, campaign)) +
-  geom_col()
+  geom_col() +
+  scale_x_continuous(labels = dollar) +
+  labs(title = "High value supporters understandably give more when they donate",
+       subtitle = "Interestingly HV donors don't contribute so much to the total income as per FIG 11",
+       x = "Median donation amount",
+       y = "Campaign",
+       caption = "FIGURE 11: Median donation amount by campaign")
 
 campaigns_summarised %>%
   mutate(campaign = fct_reorder(campaign, max_amount)) %>% 
   head(20) %>% 
   ggplot(aes(max_amount, campaign)) +
-  geom_col()
+  geom_col() +
+  scale_x_continuous(labels = dollar) +
+  labs(title = "The largest donations surface in the Christmas Bowl campaign",
+       subtitle = "Although perhaps it's the HV donors who are donating to CB in these cases...",
+       x = "Max donation amount",
+       y = "Campaign",
+       caption = "FIGURE 12: Max donation amount by campaign")
 ```
+
+### Attitudes
 
 ```{r}
-aus_map_data <- map_data("world") %>% 
-  as_tibble() %>% 
-  filter(region == "Australia") %>% 
-  filter(long < 155)
-
 contacts %>% 
-  filter(country == "Australia") %>% 
-  filter(lon > 112) %>%
-  ggplot(aes(lon, lat)) +
-  geom_polygon(aes(long, lat, group = group), data = aus_map_data, fill = "white", color = "grey") +
-  geom_point(aes(color = state, size = avg_gift_amount), alpha = 0.2) +
-  theme_map()
+  mutate(comms_preference = str_replace_all(comms_preference, "[}]", ","),
+         comms_preference = str_replace_all(comms_preference, "[{}]", "")) %>% 
+  filter(!is.na(comms_preference)) %>% 
+  unnest_tokens(comm_method, comms_preference) %>% 
+  distinct(comm_method, supporter_id, .keep_all = TRUE) %>%
+  group_by(comm_method) %>% 
+  summarise(n = n(),
+            num_gifts = sum(total_number_of_gifts),
+            avg_gift_amount = mean(avg_gift_amount),
+            total_gift_amount = sum(total_gifts)) %>% 
+  mutate(comm_method = fct_reorder(comm_method, total_gift_amount)) %>% 
+  ggplot(aes(comm_method, total_gift_amount)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = dollar) +
+  labs(title = "The communication preference seems to be a signal of willingness to give",
+       subtitle = "Understandably people who say 'do not contact' give the least...",
+       x = "Communication preference",
+       y = "Total gift amount",
+       caption = "FIGURE 13: Total gift amount by communication preference")
 ```
 
+Finally, I just want to see how much of the supporter base (at least in the data we have) actually donated. It seems that there was a significant decrease in the number of supporters who decreased this year (2017) as opposed to last year (2016) and the year before.
+
+```{r}
+contacts %>% 
+  mutate(donated_this_year = if_else(total_gifts_this_year > 0, "Donated", "Not donated"),
+         donated_last_year = if_else(total_gifts_last_year > 0, "Donated", "Not donated"),
+         donated_two_years_ago = if_else(total_gifts_two_years_ago > 0, "Donated", "Not donated")) %>% 
+  select(starts_with("donated")) %>% 
+  pivot_longer(cols = everything()) %>% 
+  count(name, value) %>% 
+  group_by(name) %>%
+  mutate(pct_donated = n / sum(n)) %>% 
+  filter(value == "Donated") %>% 
+  mutate(order = case_when(name == "donated_this_year" ~ 1,
+                           name == "donated_last_year" ~ 2, 
+                           TRUE ~ 3)) %>% 
+  arrange(order) %>% 
+  ungroup() %>% 
+  select(name, n, pct_donated)
+```
+
+----
+
+## Returning briefly to the beginning
+
+Now that I've done some exploratory data analysis (EDA), I want to return briefly to our motivation and build a plan for how to approach the questions. 
+
+With segmentation, my initial thoughts are that there are probably signals in the underlying data that indicate how likely a person is to donate. If we can build a classifier that taps into these signals and returns a **probability of donating**, then we can use that to inform all of our questions - how we target people, how much we ask from them and what sort of messaging we send to them. 
+
+After all, it makes sense to ask a bit more from someone you **know** is going to give anyway than from someone who is probably not going to give at all! `r emo::ji("moneybag")``
+
+----
+
+## Let the machines decide!
 
 
 
+## Finally, some answers!
 
+### How to segment the supporter base
 
+### How much can we ask?
 
+### What do we send?
 
-
+### Ideas for the future
 
 
 
