@@ -309,7 +309,7 @@ contacts %>%
   scale_x_log10(labels = dollar) +
   scale_y_continuous(labels = percent) +
   labs(title = "The proportion of donors in each group increases for ACT",
-       subtitle = "Do ACT donors generally donate more?",
+       subtitle = "Do ACT donors generally donate more? (x-axis on log scale)",
        x = "Total amount donated",
        y = "Proportion of supporters",
        fill = "State",
@@ -484,7 +484,7 @@ My machine learning workflow in this instance consisted of fitting a logistic re
 
 ### Fiddling with hyperparameters
 
-I'll briefly specify, just for illustrative purposes, how my metrics changed with each iterative tuning step. 
+I'll briefly specify, just for illustrative purposes, how my cross-validation metrics changed with each iterative tuning step. (Don't worry if you don't fully understand this part!)
 
 Remember, I'm trying to predict 2017 donations. I start off by trying to predict it using just log-transformed total gofts of 2016, and then at each step I add an additional predictor or do a tuning step. 
 
@@ -509,6 +509,15 @@ tribble(
 
 See how we've slowly improved our ability to accurately identify the people who will actually donate!
 
+If I am to briefly summarise the workflow and results of this model:
+
+* The entire supporter base provided was split into two groups - a training set and a test set.
+* I built a model using the training set to predict donations for the year 2017.
+* I then tested it on the test set which it had never seen before.
+* **Out of everyone who didn't donate, the model predicted 89.2% accurately.**
+* **Out of everyone who did donate, the model predicted 73.2% accurately.**
+* This is a **total accuracy of 87% - out of every 100 people, we correctly predicted the donating behaviour of 87 people!** `r emo::ji("star2")`
+
 ----
 
 ## Finally, some answers!
@@ -531,6 +540,7 @@ contacts %>%
   geom_histogram(color = "grey", bins = 60) +
   scale_x_log10(labels = dollar) +
   labs(title = "Average gift amount allows us to parametrize the 'Donation' term",
+       subtitle = "As an aside, avg gift amount looks log-normal (x-axis is on log scale)",
        x = "Average gift amount",
        y = "Number of supporters",
        caption = "FIGURE 14: Frequency count of average gift amount")
