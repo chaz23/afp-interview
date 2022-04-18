@@ -43,6 +43,7 @@ deceased <- transactions %>%
 
 # Prepare a list of previous campaigns per supporter.
 prev_campaigns <- transactions %>%
+  filter(date < "2017-01-01") %>%
   mutate(source = str_replace_all(source, "-", " "),
          source = str_replace_all(source, "[0-9]", " ")) %>% 
   unnest_tokens(campaign, source, to_lower = FALSE) %>% 
@@ -50,6 +51,17 @@ prev_campaigns <- transactions %>%
   mutate(value = campaign) %>% 
   pivot_wider(names_from = campaign, values_from = value) %>% 
   unite("previous_campaigns", AFP:last_col(), sep = "|", na.rm = TRUE)
+
+# Prepare a list of previous source_2 channels.
+prev_source_2 <- transactions %>% 
+  mutate(source_2 = tolower(source_2),
+         source_2 = str_replace_all(source_2, "-", "")) %>%
+  filter(date < "2017-01-01") %>%
+  filter(!is.na(source_2)) %>% 
+  distinct(supporter_id, source_2) %>%
+  mutate(value = source_2) %>% 
+  pivot_wider(names_from = source_2, values_from = value) %>% 
+  unite("prev_source_2", directmail:last_col(), sep = "|", na.rm = TRUE)
 
 contacts <- contacts_raw %>% 
   clean_names() %>% 
@@ -95,20 +107,34 @@ contacts <- contacts_raw %>%
                            TRUE ~ state)) %>% 
   
   # Change NAs to Unknown in religion and gender.
-  replace_na(list(religion = "Unknown", gender = "Unknown")) %>% 
+  replace_na(list(religion = "Unknown", 
+                  gender = "Unknown", 
+                  comms_preference = "Unknown",
+                  state = "Unknown")) %>% 
   
   # Remove deceased supporters.
   anti_join(deceased, by = "supporter_id") %>% 
   
   # Add previous campaigns.
   left_join(prev_campaigns, by = "supporter_id") %>% 
+  replace_na(list(previous_campaigns = "Unknown")) %>% 
   
   # Indicate whether the supporter has participated in non-financial actions previously.
   left_join((nonfin_actions %>% 
                mutate(nonfin_action = "Participated") %>% 
                select(supporter_id, nonfin_action)),
             by = "supporter_id") %>% 
-  replace_na(list(nonfin_action = "Not Participated"))
+  replace_na(list(nonfin_action = "Not Participated")) %>% 
+  
+  # Clean the comms preference column.
+  mutate(comms_preference = str_replace_all(comms_preference, "\\}\\{", ","),
+         comms_preference = str_replace_all(comms_preference, "\\}", ""),
+         comms_preference = str_replace_all(comms_preference, "\\{", ""),
+         comms_preference = str_replace_all(comms_preference, "AFP-", "")) %>% 
+  
+  # Join previous source_2 channels.
+  left_join(prev_source_2, by = "supporter_id") %>% 
+  replace_na(list(prev_source_2 = "Not Participated"))
 
 # Map the campaign codes to normal descriptions. ----
 
